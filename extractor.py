@@ -76,7 +76,7 @@ Answer with JSON only, exactly these keys:
  "type": one of {llojet},
  "summary": "one short English sentence, WITHOUT names of private persons",
  "event_date": "YYYY-MM-DD" or null,
- "place": "town or municipality in Kosovo" or null,
+ "place": "town or municipality in Kosovo, or a town in a neighbouring country if the event happened there" or null,
  "place_precision": "village", "municipality" or "region" (e.g. "north Kosovo") or null,
  "date_precision": "exact" (a specific day, e.g. "yesterday") or "approximate"
                    (e.g. "last week", "recently") or null,

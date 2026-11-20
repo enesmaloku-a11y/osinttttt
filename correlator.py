@@ -57,6 +57,39 @@ VENDET = {
 }
 RAJONET = {"veri"}  # emrat kanonikë që janë rajon, jo komunë
 
+# Qytetet kryesore të vendeve fqinje (shqip, serbisht, anglisht; pa diakritikë).
+# Përputhen vetëm si fjalë e plotë, që "nis" të mos gjendet brenda "danish".
+# Edhe rasa lokative serbe ("u Preševu"), përveç atyre që janë fjalë të zakonshme
+# ("nisu", "plavu", "tirani").
+RAJONI = {
+    ("beograd", "belgrade", "beogradi", "beogradit", "beogradu"): (44.787, 20.457),
+    ("novi pazar", "novi pazari", "novi pazarit", "novom pazaru"): (43.137, 20.512),
+    ("raska", "rashke", "rashka", "raski"): (43.286, 20.616),
+    ("kursumlija", "kurshumli", "kurshumlija", "kurshumlia", "kursumliji"): (43.141, 21.271),
+    ("presevo", "presheve", "presheva", "preshevo", "presheves", "presevu"): (42.309, 21.649),
+    ("bujanovac", "bujanoc", "bujanocit", "bujanovci", "bujanovcu"): (42.461, 21.767),
+    ("medvedja", "medvegje", "medvegja", "medvegjes", "medvedji"): (42.843, 21.585),
+    ("tutin", "tutinu"): (42.990, 20.337),
+    ("nis", "nish", "nishi", "nishit"): (43.320, 21.896),
+    ("tirane", "tirana", "tiranes"): (41.327, 19.819),
+    ("kukes", "kukesi", "kukesit"): (42.077, 20.421),
+    ("shkoder", "shkodra", "shkodres", "skadar"): (42.068, 19.512),
+    ("shkup", "shkupi", "shkupit", "skopje", "skoplje", "skoplju"): (41.998, 21.425),
+    ("kumanovo", "kumanove", "kumanova", "kumanovu"): (42.132, 21.714),
+    ("tetove", "tetovo", "tetova", "tetoves", "tetovu"): (42.010, 20.971),
+    ("podgorica", "podgorice", "podgorices", "podgorici"): (42.441, 19.263),
+    ("rozaje", "rozhaje", "rozhaja"): (42.840, 20.167),
+    ("plav", "plave", "plaves"): (42.597, 19.945),
+}
+
+# Serbishtja cirilike -> latinisht (pa diakritikë, si pjesa tjetër: ж -> z, ч -> c)
+CIRILIK = str.maketrans({
+    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "ђ": "dj", "е": "e", "ж": "z",
+    "з": "z", "и": "i", "ј": "j", "к": "k", "л": "l", "љ": "lj", "м": "m", "н": "n",
+    "њ": "nj", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "ћ": "c", "у": "u",
+    "ф": "f", "х": "h", "ц": "c", "ч": "c", "џ": "dz", "ш": "s",
+})
+
 # Domeni i GDELT -> emri i mediumit, që të mos numërohet dy herë
 DOMENET = {
     "rtklive.com": "RTK", "koha.net": "Koha", "kallxo.com": "Kallxo",
@@ -66,15 +99,24 @@ DOMENET = {
 
 
 def pa_diakritike(s):
-    s = unicodedata.normalize("NFKD", s or "").lower()
+    s = (s or "").lower().translate(CIRILIK)  # cirilikja së pari: "Звечан" -> "zvecan"
+    s = unicodedata.normalize("NFKD", s)
     return "".join(c for c in s if not unicodedata.combining(c)).replace("đ", "dj")
 
 
 def gjej_vendin(vendi):
-    """Kthen (emri_kanonik, lat, lon) ose (None, None, None) nëse vendi s'njihet."""
+    """Kthen (emri_kanonik, lat, lon) ose (None, None, None) nëse vendi s'njihet.
+    Radha: komunat e Kosovës, qytetet fqinje, pastaj rajoni "veri" i Kosovës."""
     v = pa_diakritike(vendi)
     for emrat, (lat, lon) in VENDET.items():
-        if any(e in v for e in emrat):
+        if emrat[0] not in RAJONET and any(e in v for e in emrat):
+            return emrat[0], lat, lon
+    for emrat, (lat, lon) in RAJONI.items():
+        if any(re.search(rf"\b{re.escape(e)}\b", v) for e in emrat):
+            return emrat[0], lat, lon
+    # Rajoni vetëm kur përmendet Kosova: "Maqedonia e Veriut" s'është veriu i Kosovës
+    for emrat, (lat, lon) in VENDET.items():
+        if emrat[0] in RAJONET and "kosov" in v and any(e in v for e in emrat):
             return emrat[0], lat, lon
     return None, None, None
 
@@ -109,6 +151,8 @@ def dita(s):
 def perputhen(grup, art):
     """A i përket artikulli këtij grupi? Krahasohet me artikullin e parë të grupit."""
     g = grup[0]
+    if g["rajonale"] != art["rajonale"]:  # ngjarje jashtë Kosovës s'bashkohet me një brenda
+        return False
     if g["type"] != art["type"] or abs((dita(g["dita"]) - dita(art["dita"])).days) > 1:
         return False
     # I njëjti vend nuk mjafton (në Prishtinë ndodhin shumë gjëra në një ditë),
@@ -166,11 +210,13 @@ def korrelo():
     artikujt = []
     for r in db.artikuj_te_nxjerre():
         j = json.loads(r["rezultati_json"])
-        if not (j.get("is_security_event") and j.get("in_kosovo")):
+        # Mbahen të gjitha ngjarjet e sigurisë; ato jashtë Kosovës shënohen si rajonale
+        if not j.get("is_security_event"):
             continue
         vendi, lat, lon = gjej_vendin(j.get("place"))
         artikujt.append({
             **j, "url": r["url"], "gjuha": r["gjuha"], "mediumi": mediumi(r["burimi"]),
+            "rajonale": not j.get("in_kosovo"),
             "dita": j.get("event_date") or r["data"][:10],
             "data_nga_publikimi": not j.get("event_date"),
             "vendi": vendi, "vendi_tekst": j.get("place"), "lat": lat, "lon": lon,
@@ -193,6 +239,7 @@ def korrelo():
             burimet=[a["url"] for a in g], boshllequet=boshllequet(g),
             lloji=p["type"], vendi=p["vendi_tekst"], lat=p["lat"], lon=p["lon"],
             detajet={
+                "rajonale": p["rajonale"],  # True = ngjarja ndodhi jashtë Kosovës
                 "mediat": sorted({a["mediumi"] for a in g}),
                 "gjuhet": sorted({a["gjuha"] for a in g}),
                 "aktoret": sorted({x for a in g for x in a.get("actors") or []}),
@@ -206,7 +253,31 @@ def korrelo():
 
 if __name__ == "__main__":
     # Kontroll i vogël i rregullave
-    assert gjej_vendin("Северна Митровица")[0] is None  # cirilikja s'njihet (boshllëk)
+    # Cirilikja tani njihet
+    assert gjej_vendin("Северна Митровица")[0] == "mitrovic"
+    assert gjej_vendin("Звечан")[0] == "zvecan"
+    assert gjej_vendin("Београд") == ("beograd", 44.787, 20.457)
+    assert gjej_vendin("Прешево")[0] == "presevo"
+    assert gjej_vendin("код полицијске станице у Прешеву")[0] == "presevo"
+    assert gjej_vendin("nisu znali")[0] is None  # "nisu" = "nuk ishin", jo Nish
+    assert pa_diakritike("Ђаковица, Љубљана, Њујорк, Џеп") == "djakovica, ljubljana, njujork, dzep"
+    # Çdo variant i qyteteve fqinje gjen qytetin e vet (asnjë komunë e Kosovës s'e "vjedh")
+    for emrat in RAJONI:
+        for e in emrat:
+            assert gjej_vendin(e)[0] == emrat[0], (e, gjej_vendin(e))
+    assert gjej_vendin("Preševo, Serbia")[0] == "presevo"
+    assert gjej_vendin("Medveđa")[0] == "medvedja"
+    assert gjej_vendin("Niš")[0] == "nis" and gjej_vendin("Nish, Serbi")[0] == "nis"
+    # Emrat e shkurtër vetëm si fjalë e plotë
+    assert gjej_vendin("Danish embassy")[0] is None      # "nis" brenda "danish"
+    assert gjej_vendin("plavi most")[0] is None           # "plav" brenda "plavi"
+    assert gjej_vendin("Tutinovo naselje")[0] is None     # "tutin" brenda "tutinovo"
+    assert gjej_vendin("policia nisi hetimin")[0] is None  # "nis" brenda "nisi"
+    # "Veriu" i një shteti tjetër s'është veriu i Kosovës
+    assert gjej_vendin("Tetovë, Maqedonia e Veriut")[0] == "tetove"
+    assert gjej_vendin("Kumanovo, Северна Македонија")[0] == "kumanovo"
+    assert gjej_vendin("Maqedonia e Veriut")[0] is None
+    assert gjej_vendin("veriu i Kosovës")[0] == "veri"
     assert gjej_vendin("Mitrovicë e Veriut")[0] == "mitrovic"
     assert gjej_vendin("Peć")[0] == "peje"
     assert mediumi("GDELT:www.telegrafi.com") == "Telegrafi"
@@ -215,6 +286,12 @@ if __name__ == "__main__":
     assert saktesia_vendit([{"vendi": "veri", "place_precision": "village"}]) == "region"
     assert saktesia_vendit([{"vendi": "peje", "place_precision": None}]) == "municipality"
     assert saktesia_dates([{"date_precision": "approximate"}, {"date_precision": "exact"}]) == "exact"
+    # Rajonale dhe në Kosovë nuk bashkohen kurrë, edhe kur gjithçka tjetër përputhet
+    a = {"type": "police_military_operation", "dita": "2026-11-16", "vendi": None,
+         "summary": "army drills near the administrative boundary line", "rajonale": True}
+    assert perputhen([a], dict(a))
+    assert not perputhen([a], {**a, "rajonale": False})
+    assert not perputhen([{**a, "rajonale": False}], a)
     print(f"U krijuan {korrelo()} ngjarje.")
     # Ngjarjet rindërtohen nga e para, ndaj besueshmëria rillogaritet menjëherë
     import scoring
