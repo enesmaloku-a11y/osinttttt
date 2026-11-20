@@ -43,6 +43,17 @@ artikujt["data"] = pd.to_datetime(artikujt["data"], utc=True, errors="coerce")
 artikujt["grupi"] = artikujt["burimi"].where(~artikujt["burimi"].str.startswith("GDELT:"), "GDELT")
 
 # ---------------- Filtrat ----------------
+# Butoni kryesor në krye të sidebar-it, që të duket gjithmonë (edhe në ekran të vogël)
+st.sidebar.header("Pipeline-i")
+if st.sidebar.button("▶️ Ekzekuto tani", type="primary", key="ekz_sidebar", use_container_width=True):
+    if ekzekuto.po_punon():
+        st.sidebar.warning("Një ekzekutim po punon tashmë.")
+    else:
+        ekzekuto.nis_ne_sfond(20)
+        st.sidebar.success("U nis në sfond (20 artikuj).")
+st.sidebar.caption("⏳ Po punon tani…" if ekzekuto.po_punon() else
+                   "Orari dhe log-u: skeda 'Ekzekutimi'.")
+
 st.sidebar.header("Filtrat")
 burimet = st.sidebar.multiselect("Burimi", sorted(artikujt["grupi"].unique()))
 gjuhet = st.sidebar.multiselect("Gjuha", sorted(artikujt["gjuha"].unique()))
