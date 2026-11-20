@@ -66,8 +66,19 @@ def pyet_ollama(prompt, si_json=False):
     trupi = json.dumps(kerkesa).encode()
     req = urllib.request.Request(OLLAMA_URL, data=trupi,
                                  headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=300) as r:
-        pergjigja = json.loads(r.read())["response"]
+    # Ollama ndonjëherë kthen 500 (p.sh. kur modeli ringarkohet); riprovo 2 herë
+    for prova in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=300) as r:
+                pergjigja = json.loads(r.read())["response"]
+            break
+        except urllib.error.HTTPError as e:
+            if e.code < 500 or prova == 2:
+                raise
+        except urllib.error.URLError:
+            if prova == 2:
+                raise
+        time.sleep(5 * (prova + 1))
     # modelet "reasoning" ndonjëherë e shtojnë mendimin në tekst; hiqe
     return re.sub(r"<think>.*?</think>", "", pergjigja, flags=re.S).strip()
 

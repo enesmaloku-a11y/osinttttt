@@ -65,7 +65,9 @@ def fshi_emrat(teksti):
         return " ".join(dalja)
     return EMRA.sub(zevendeso, teksti or "")
 FUSHAT = ["is_security_event", "in_kosovo", "type", "summary", "event_date", "place",
-          "actors", "killed", "injured", "arrested"]
+          "place_precision", "date_precision", "actors", "killed", "injured", "arrested"]
+SAKTESIA_VENDIT = ["village", "municipality", "region"]
+SAKTESIA_DATES = ["exact", "approximate"]
 
 PROMPT = """You extract one security event in or about Kosovo from a news article.
 Answer with JSON only, exactly these keys:
@@ -75,6 +77,9 @@ Answer with JSON only, exactly these keys:
  "summary": "one short English sentence, WITHOUT names of private persons",
  "event_date": "YYYY-MM-DD" or null,
  "place": "town or municipality in Kosovo" or null,
+ "place_precision": "village", "municipality" or "region" (e.g. "north Kosovo") or null,
+ "date_precision": "exact" (a specific day, e.g. "yesterday") or "approximate"
+                   (e.g. "last week", "recently") or null,
  "actors": ["institutions or groups only, never names of individuals"],
  "killed": number or null, "injured": number or null, "arrested": number or null}}
 A security event is: violence, murder, arrest, attack, explosion, weapons find,
@@ -114,6 +119,10 @@ def valido(r, data_publikimit):
     r["in_kosovo"] = r["in_kosovo"] is True
     if r["type"] not in LLOJET:
         r["type"] = "other"
+    # Rregull: dezinformimi për siguri është vetë ngjarje sigurie, edhe kur policia e mohon.
+    # Modeli shpesh e njeh llojin, por thotë "s'ka ngjarje" sepse sulmi s'ndodhi.
+    if r["type"] == "disinformation":
+        r["is_security_event"] = True
     for k in ("killed", "injured", "arrested"):
         r[k] = numer(r[k])
     # Mbrojtja e të dhënave personale me rregulla, jo me besim te modeli
@@ -128,6 +137,11 @@ def valido(r, data_publikimit):
             raise ValueError
     except ValueError:
         r["event_date"] = None
+    # Saktësia: vetëm vlerat e njohura; pa vend/datë s'ka saktësi
+    if r["place_precision"] not in SAKTESIA_VENDIT or not r["place"]:
+        r["place_precision"] = None
+    if r["date_precision"] not in SAKTESIA_DATES or not r["event_date"]:
+        r["date_precision"] = None
     return r
 
 
@@ -171,6 +185,14 @@ if __name__ == "__main__":
     assert fshi_emrat("Kosovo Police arrested two in North Mitrovica") == \
         "Kosovo Police arrested two in North Mitrovica"
     assert fshi_emrat("Kosovo Police Officer Triumf Riza") == "Kosovo Police [person]"
+    # Saktësia e vendit/datës: vlera të panjohura ose pa vend/datë -> None
+    r = valido({"place": "North Kosovo", "place_precision": "region", "event_date": "2026-11-19",
+                "date_precision": "exact"}, "2026-11-20")
+    assert (r["place_precision"], r["date_precision"]) == ("region", "exact"), r
+    r = valido({"place": None, "place_precision": "village", "event_date": None,
+                "date_precision": "approximate"}, "2026-11-20")
+    assert (r["place_precision"], r["date_precision"]) == (None, None), r
+    assert valido({"place": "Peja", "place_precision": "city"}, "2026-11-20")["place_precision"] is None
     # Filtri duhet të kapë edhe kibernetikën, infrastrukturën dhe dezinformimin
     for t in ("Hakerët publikuan të dhëna", "Sever Kosova ostao bez struje", "Саботажа далековода",
               "Fake news about poisoned water", "Lajme të rreme për ujin"):

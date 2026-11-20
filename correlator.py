@@ -52,7 +52,10 @@ VENDET = {
     ("jarinj", "jarinje"): (43.133, 20.805),
     ("banjsk",): (42.997, 20.775),
     ("bernjak", "brnjak"): (42.870, 20.580),
+    # Rajonet në FUND: kontrollohen vetëm nëse s'u gjet komunë ("Mitrovicë e Veriut" -> mitrovic)
+    ("veri", "north kosov", "northern kosov", "sever kosov", "severn"): (42.95, 20.75),
 }
+RAJONET = {"veri"}  # emrat kanonikë që janë rajon, jo komunë
 
 # Domeni i GDELT -> emri i mediumit, që të mos numërohet dy herë
 DOMENET = {
@@ -116,6 +119,25 @@ def perputhen(grup, art):
     return sim >= 0.35
 
 
+RENDI_VENDIT = {"village": 3, "municipality": 2, "region": 1}
+
+
+def saktesia_vendit(grup):
+    """Saktësia më e mirë në grup. Rregull: nëse vendi u gjet si rajon, s'mund të jetë më mirë."""
+    if grup[0]["vendi"] in RAJONET:
+        return "region"
+    vlerat = [a.get("place_precision") for a in grup if a.get("place_precision")]
+    if not vlerat and grup[0]["vendi"]:
+        return "municipality"  # vendi u njoh nga lista e komunave
+    return max(vlerat, key=RENDI_VENDIT.get) if vlerat else None
+
+
+def saktesia_dates(grup):
+    """'exact' nëse të paktën një burim jep ditën e saktë."""
+    vlerat = {a.get("date_precision") for a in grup}
+    return "exact" if "exact" in vlerat else "approximate" if "approximate" in vlerat else None
+
+
 def boshllequet(grup):
     """Lista e boshllëqeve për analistin (rregulla të qarta)."""
     b = []
@@ -128,6 +150,10 @@ def boshllequet(grup):
         b.append("vendi i panjohur ose jashtë listës")
     if all(a["data_nga_publikimi"] for a in grup):
         b.append("data e ngjarjes nga data e publikimit")
+    if saktesia_vendit(grup) == "region":
+        b.append("vendi vetëm në nivel rajoni")
+    if saktesia_dates(grup) == "approximate":
+        b.append("data e përafërt")
     for k, emri in (("killed", "të vdekurve"), ("injured", "të plagosurve"), ("arrested", "të arrestuarve")):
         vlerat = {a[k] for a in grup if a[k] is not None}
         if len(vlerat) > 1:
@@ -170,6 +196,8 @@ def korrelo():
                 "mediat": sorted({a["mediumi"] for a in g}),
                 "gjuhet": sorted({a["gjuha"] for a in g}),
                 "aktoret": sorted({x for a in g for x in a.get("actors") or []}),
+                "saktesia_vendit": saktesia_vendit(g),
+                "saktesia_dates": saktesia_dates(g),
                 **{k: [a[k] for a in g] for k in ("killed", "injured", "arrested")},
             },
         )
@@ -182,6 +210,11 @@ if __name__ == "__main__":
     assert gjej_vendin("Mitrovicë e Veriut")[0] == "mitrovic"
     assert gjej_vendin("Peć")[0] == "peje"
     assert mediumi("GDELT:www.telegrafi.com") == "Telegrafi"
+    assert gjej_vendin("North Kosovo")[0] == "veri"
+    assert gjej_vendin("Mitrovicë e Veriut")[0] == "mitrovic"  # komuna fiton mbi rajonin
+    assert saktesia_vendit([{"vendi": "veri", "place_precision": "village"}]) == "region"
+    assert saktesia_vendit([{"vendi": "peje", "place_precision": None}]) == "municipality"
+    assert saktesia_dates([{"date_precision": "approximate"}, {"date_precision": "exact"}]) == "exact"
     print(f"U krijuan {korrelo()} ngjarje.")
     # Ngjarjet rindërtohen nga e para, ndaj besueshmëria rillogaritet menjëherë
     import scoring

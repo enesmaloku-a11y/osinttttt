@@ -1,4 +1,5 @@
 """collector.py - Mbledh artikuj nga RSS dhe GDELT dhe i ruan në SQLite pa dublikatë."""
+import hashlib
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -59,13 +60,38 @@ def nxirr_tekstin(url):
     return ""
 
 
+def gjurma(teksti):
+    """SHA-256 i tekstit: ndryshon krejt edhe kur ndryshon një shkronjë."""
+    return hashlib.sha256((teksti or "").encode("utf-8")).hexdigest()
+
+
+def verifiko(url, hash_i_ruajtur, teksti_bruto=None):
+    """Rishkarkon faqen dhe e krahason me hash-in e ruajtur kur u mblodh.
+    Faqet shtojnë shpesh reklama/"më të lexuarat", ndaj hash-i ndryshon edhe kur lajmi s'ka
+    ndryshuar. Nëse kemi ende tekstin bruto, tregojmë sa rreshta të lajmit mungojnë."""
+    teksti = nxirr_tekstin(url)
+    if not teksti:
+        return "s'u arrit (fshirë ose offline)"
+    if gjurma(teksti) == hash_i_ruajtur:
+        return "i pandryshuar"
+    if not teksti_bruto:
+        return "i ndryshuar"
+    rreshtat = [r for r in teksti_bruto.splitlines() if r.strip()]
+    mungojne = [r for r in rreshtat if r not in teksti]
+    if not mungojne:
+        return "i ndryshuar vetëm rreth lajmit (teksti origjinal është i plotë)"
+    return f"i ndryshuar: {len(mungojne)} nga {len(rreshtat)} rreshta të lajmit mungojnë ose ndryshuan"
+
+
 def pergatit(burimi, url, titulli, data, permbledhja=""):
     """Merr tekstin e plotë dhe gjuhën; kthen dict gati për db (ose None)."""
     teksti = nxirr_tekstin(url) or pastro_html(permbledhja)
     if not teksti:
         return None
+    # Hash-i merret mbi tekstin bruto, para se processor.py ta pastrojë/presë
     return dict(url=url, burimi=burimi, titulli=titulli, data=data,
-                gjuha=zbulo_gjuhen(f"{titulli}\n{teksti}"), teksti=teksti)
+                gjuha=zbulo_gjuhen(f"{titulli}\n{teksti}"), teksti=teksti,
+                hash_sha256=gjurma(teksti))
 
 
 def ruaj_te_gjitha(detyrat):
@@ -125,6 +151,10 @@ def mblidh_gdelt(fjala="Kosovo", periudha="1d", max_artikuj=100):
 def mblidh_te_gjitha():
     """Mbledh nga të gjitha burimet dhe kthen {burimi: artikuj_te_rinj}."""
     rezultati = {}
+    # Artikujt e mbledhur para se të kishte hash marrin hash tani (vetëm ata me tekst bruto)
+    n = db.plotreso_hash(gjurma)
+    if n:
+        print(f"  Hash u shtua për {n} artikuj të vjetër")
     for burimi, url in FEEDS.items():
         t0 = time.time()
         try:

@@ -11,7 +11,9 @@ import time
 
 import collector
 import correlator
+import db
 import extractor
+import patterns
 import processor
 import scoring
 
@@ -36,6 +38,11 @@ def main(n):
 
     print("5/5 Besueshmëria...")
     scoring.vlereso_te_gjitha()
+
+    # Alarmet për rritje të pazakonta (vetëm informim; analisti vendos)
+    alarmet = patterns.rritjet(db.ngjarjet(), fillimi_mbledhjes=db.fillimi_i_mbledhjes())
+    for a in alarmet:
+        print("  ALARM: " + patterns.pershkrim(a))
 
     print(f"\nGati për {time.time() - t0:.0f} s: {te_reja} artikuj të rinj, {perkthyer} të përkthyer, "
           f"{me_model} kaluan te modeli ({ngjarje} ngjarje sigurie), {filtruar} u filtruan pa model, "

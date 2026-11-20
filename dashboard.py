@@ -11,7 +11,10 @@ import pandas as pd
 import streamlit as st
 from streamlit_folium import st_folium
 
+import collector
 import db
+import ekzekuto
+import patterns
 
 st.set_page_config(page_title="OSINT Kosova", layout="wide")
 
@@ -25,8 +28,15 @@ def lexo(sql):
 
 
 artikujt = lexo("SELECT id, url, burimi, titulli, data, gjuha, teksti, teksti_perkthyer, "
-                "perpunuar FROM articles")
+                "perpunuar, hash_sha256, mbledhur_me FROM articles")
 ngjarjet = lexo("SELECT * FROM events")
+vendimet = lexo("SELECT * FROM vendimet").set_index("url_kryesor")
+
+# Vendimi i analistit lidhet me URL-në e artikullit më të hershëm të ngjarjes
+IKONAT = {"e konfirmuar": "✅", "e pakonfirmuar": "❓", "e hedhur poshtë": "❌"}
+ngjarjet["url_kryesor"] = ngjarjet["burimet"].apply(lambda b: json.loads(b)[0])
+ngjarjet["statusi"] = ngjarjet["url_kryesor"].map(vendimet["statusi"]).fillna("e pakonfirmuar")
+ngjarjet["shenimi"] = ngjarjet["url_kryesor"].map(vendimet["shenimi"]).fillna("")
 
 artikujt["data"] = pd.to_datetime(artikujt["data"], utc=True, errors="coerce")
 # Të gjitha domenet e GDELT bashkohen në një grup që grafiku të mbetet i lexueshëm
@@ -37,6 +47,9 @@ st.sidebar.header("Filtrat")
 burimet = st.sidebar.multiselect("Burimi", sorted(artikujt["grupi"].unique()))
 gjuhet = st.sidebar.multiselect("Gjuha", sorted(artikujt["gjuha"].unique()))
 kerko = st.sidebar.text_input("Kërko në titull/tekst")
+statuset = st.sidebar.multiselect("Vendimi i analistit (ngjarjet)", db.STATUSET)
+if statuset:
+    ngjarjet = ngjarjet[ngjarjet["statusi"].isin(statuset)]
 
 f = artikujt
 if burimet:
@@ -58,10 +71,22 @@ k2.metric("Të përkthyer", int(f["teksti_perkthyer"].notna().sum()))
 k3.metric("Të përpunuar", int(f["perpunuar"].sum()))
 k4.metric("Ngjarje", len(ngjarjet))
 
-tab_ngj, tab_art = st.tabs(["Ngjarjet", "Artikujt"])
+tab_ngj, tab_art, tab_ekz = st.tabs(["Ngjarjet", "Artikujt", "Ekzekutimi"])
 
 # ---------------- Ngjarjet ----------------
 with tab_ngj:
+    # Alarmet nga patterns.py (rritje e pazakontë e ngjarjeve në një komunë)
+    fillimi = db.fillimi_i_mbledhjes()
+    alarmet = patterns.rritjet(ngjarjet.to_dict("records"), fillimi_mbledhjes=fillimi)
+    for a in alarmet:
+        st.warning("⚠️ " + patterns.pershkrim(a))
+    if fillimi and not ngjarjet.empty and not patterns.histori_e_mjaftueshme(
+            fillimi, ngjarjet["data"].max()):
+        st.caption(f"Alarmet për rritje aktivizohen pas 5 javë mbledhjeje "
+                   f"(mbledhja filloi më {str(fillimi)[:10]}).")
+    elif not alarmet:
+        st.caption("S'ka rritje të pazakonta (rregulli: ≥ 3 ngjarje në 7 ditë dhe ≥ 2x mesatarja javore).")
+
     # Ngjyra sipas besueshmërisë: jeshile >= 70%, portokalli >= 40%, e kuqe më poshtë
     def ngjyra(v):
         return "gray" if pd.isna(v) else "green" if v >= 0.7 else "orange" if v >= 0.4 else "red"
@@ -71,15 +96,22 @@ with tab_ngj:
     ngjarjet["besueshmeria"] = ngjarjet["besueshmeria"].apply(
         lambda v: "e pavlerësuar" if pd.isna(v) else f"{v:.0%}")
     harta = folium.Map(location=[42.6, 20.9], zoom_start=8)  # qendra e Kosovës
+    SAKTESIA = {"village": "fshat", "municipality": "komunë", "region": "vetëm rajon",
+                "exact": "e saktë", "approximate": "e përafërt", None: "e panjohur"}
+    ngjarjet["det"] = ngjarjet["detajet_json"].apply(lambda d: json.loads(d or "{}"))
     for _, e in ngjarjet.dropna(subset=["lat", "lon"]).iterrows():
-        folium.Marker(
-            [e["lat"], e["lon"]],
-            tooltip=e["titulli"],
-            popup=f"{e['titulli']}<br>Besueshmëria: {e['besueshmeria']}",
-            icon=folium.Icon(color=e["ngjyra"]),
-        ).add_to(harta)
-    st.caption("Ngjyra: jeshile ≥ 70%, portokalli ≥ 40%, e kuqe < 40%. "
-               "Ngjarjet pa vend të njohur nuk dalin në hartë, por janë në listë.")
+        sv = e["det"].get("saktesia_vendit")
+        popup = (f"{e['titulli']}<br>Besueshmëria: {e['besueshmeria']}<br>"
+                 f"Vendi: {SAKTESIA[sv]} · Vendimi: {e['statusi']}")
+        if sv == "region":
+            # Vend i përafërt: rreth i madh në vend të pikës, që të mos duket më i saktë se ç'është
+            folium.Circle([e["lat"], e["lon"]], radius=15000, color=e["ngjyra"], fill=True,
+                          fill_opacity=0.15, tooltip=e["titulli"], popup=popup).add_to(harta)
+        else:
+            folium.Marker([e["lat"], e["lon"]], tooltip=e["titulli"], popup=popup,
+                          icon=folium.Icon(color=e["ngjyra"])).add_to(harta)
+    st.caption("Ngjyra: jeshile ≥ 70%, portokalli ≥ 40%, e kuqe < 40%. Rrethi = vendi dihet vetëm "
+               "në nivel rajoni. Ngjarjet pa vend të njohur nuk dalin në hartë, por janë në listë.")
     st_folium(harta, height=450, use_container_width=True, returned_objects=[])
 
     if ngjarjet.empty:
@@ -112,11 +144,13 @@ with tab_ngj:
         st.caption("Çdo pikë është një ngjarje. Madhësia tregon numrin e burimeve.")
 
         for _, e in ngjarjet.sort_values("data", ascending=False).iterrows():
-            with st.expander(f"{e['data'][:10]} · {e['titulli']} · besueshmëria {e['besueshmeria']}"):
-                st.write(f"**Lloji:** {e['lloji'] or '-'}  ·  **Vendi:** {e['vendi'] or '-'}  ·  "
-                         f"**Gjuha:** {e['gjuha']}")
+            with st.expander(f"{IKONAT[e['statusi']]} {e['data'][:10]} · {e['titulli']} · "
+                             f"besueshmëria {e['besueshmeria']}"):
+                det = e["det"]
+                st.write(f"**Lloji:** {e['lloji'] or '-'}  ·  **Vendi:** {e['vendi'] or '-'} "
+                         f"({SAKTESIA[det.get('saktesia_vendit')]})  ·  "
+                         f"**Data:** {SAKTESIA[det.get('saktesia_dates')]}  ·  **Gjuha:** {e['gjuha']}")
                 st.write("**Boshllëqet:** " + (", ".join(json.loads(e["boshllequet"])) or "asnjë"))
-                det = json.loads(e["detajet_json"] or "{}")
                 st.write(f"**Mediat:** {', '.join(det.get('mediat', []))}  ·  "
                          f"**Aktorët:** {', '.join(det.get('aktoret', [])) or '-'}")
                 if det.get("arsyetimi"):
@@ -126,6 +160,18 @@ with tab_ngj:
                 st.write("**Burimet:**")
                 for u in json.loads(e["burimet"]):
                     st.markdown(f"- [{u}]({u})")
+
+                # Vendimi i analistit: sistemi vetëm sugjeron, njeriu vendos
+                st.write("**Vendimi i analistit:**")
+                k = e["url_kryesor"]
+                statusi = st.radio("Statusi", db.STATUSET, index=db.STATUSET.index(e["statusi"]),
+                                   key=f"st_{k}", horizontal=True, label_visibility="collapsed")
+                shenimi = st.text_input("Shënim", e["shenimi"], key=f"sh_{k}",
+                                        placeholder="p.sh. e konfirmoi Policia në Facebook")
+                if st.button("Ruaj vendimin", key=f"rv_{k}"):
+                    db.ruaj_vendimin(k, statusi, shenimi)
+                    st.cache_data.clear()
+                    st.rerun()
 
 # ---------------- Artikujt ----------------
 with tab_art:
@@ -151,6 +197,57 @@ with tab_art:
             format_func=lambda i: zgjedhje.set_index("id").loc[i, "titulli"] or str(i))
         a = zgjedhje.set_index("id").loc[id_zgjedhur]
         st.markdown(f"[Hap burimin]({a['url']})")
+        # Gjurma e tekstit kur u mblodh: provon nëse portali e ndryshoi/fshiu lajmin më vonë
+        if isinstance(a["hash_sha256"], str):  # pandas e jep NaN kur mungon
+            h, b = st.columns([3, 1])
+            h.caption(f"Hash SHA-256: `{a['hash_sha256'][:12]}…` · mbledhur më {a['mbledhur_me']} UTC")
+            if b.button("Verifiko tani", key=f"vf_{id_zgjedhur}"):
+                with st.spinner("Po shkarkohet faqja..."):
+                    # Teksti është ende bruto vetëm nëse processor.py s'e ka pastruar/përkthyer
+                    bruto = a["teksti"] if not isinstance(a["teksti_perkthyer"], str) else None
+                    b.write(collector.verifiko(a["url"], a["hash_sha256"], bruto))
+        else:
+            st.caption("Pa hash: artikulli u përpunua para se të shtohej hash-i.")
         o, p = st.columns(2)
         o.text_area("Origjinali", a["teksti"] or "", height=300)
-        p.text_area("Përkthimi (EN)", a["teksti_perkthyer"] or "Ende i papërkthyer", height=300)
+        p.text_area("Përkthimi (EN)", a["teksti_perkthyer"] if isinstance(a["teksti_perkthyer"], str)
+                    else "Ende i papërkthyer", height=300)  # pandas jep NaN, jo None
+
+# ---------------- Ekzekutimi i pipeline-it ----------------
+with tab_ekz:
+    st.subheader("Ekzekuto tani")
+    n = st.number_input("Sa artikuj të përkthehen dhe analizohen në një ekzekutim", 5, 500, 20, step=5,
+                        help="Më shumë artikuj = më shumë kohë (rreth 1 minutë për artikull me modelin aktual).")
+    # Butoni është gjithmonë aktiv; bllokimi te ekzekuto.py s'lejon dy ekzekutime njëkohësisht
+    if ekzekuto.po_punon():
+        st.info("⏳ Pipeline-i po punon tani. Shiko log-un më poshtë; kur të mbarojë, kliko 'Rifresko të dhënat'.")
+    if st.button("▶️ Ekzekuto tani", type="primary"):
+        if ekzekuto.po_punon():
+            st.warning("Një ekzekutim po punon tashmë. Prit sa të mbarojë, pastaj provo sërish.")
+        else:
+            ekzekuto.nis_ne_sfond(n)
+            st.success("U nis në sfond. Mund ta mbyllësh këtë faqe; puna vazhdon.")
+
+    st.subheader("Automatikisht")
+    opsionet = {"Jo (vetëm me dorë)": 0, "Çdo 1 orë": 1, "Çdo 2 orë": 2, "Çdo 3 orë": 3,
+                "Çdo 6 orë": 6, "Çdo 12 orë": 12, "Çdo 24 orë": 24}
+    aktuale = ekzekuto.orari_aktual()
+    vlera = aktuale["ore"] if aktuale else 0
+    zgjedhja = st.selectbox("Sa shpesh të ekzekutohet vetë", list(opsionet),
+                            index=list(opsionet.values()).index(vlera) if vlera in opsionet.values() else 0)
+    if aktuale:
+        st.caption(f"Aktiv: çdo {aktuale['ore']} orë, {aktuale['n']} artikuj. Punon edhe kur dashboard-i "
+                   "është i mbyllur, por kompjuteri duhet të jetë ndezur dhe Ollama duke punuar.")
+    if st.button("Ruaj orarin"):
+        ore = opsionet[zgjedhja]
+        ok, mesazhi = ekzekuto.vendos_orarin(ore, n) if ore else ekzekuto.hiq_orarin()
+        (st.success if ok else st.error)(("Orari u ruajt." if ore else "Orari automatik u hoq.")
+                                         if ok else f"Gabim nga Task Scheduler: {mesazhi}")
+        if ok:
+            st.rerun()
+
+    st.subheader("Log-u i fundit")
+    st.code(ekzekuto.log_fundit(25), language=None)
+    if st.button("🔄 Rifresko të dhënat"):
+        st.cache_data.clear()
+        st.rerun()

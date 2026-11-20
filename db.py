@@ -36,7 +36,19 @@ CREATE TABLE IF NOT EXISTS events (
     detajet_json    TEXT,
     krijuar_me      TEXT DEFAULT (datetime('now'))
 );
+
+-- Vendimet e analistit. Ruhen veçmas sepse correlator.py e rindërton events çdo herë.
+-- Çelësi është URL-ja e artikullit më të hershëm të ngjarjes.
+CREATE TABLE IF NOT EXISTS vendimet (
+    url_kryesor  TEXT PRIMARY KEY,
+    statusi      TEXT NOT NULL CHECK (statusi IN
+                 ('e konfirmuar', 'e pakonfirmuar', 'e hedhur poshtë')),
+    shenimi      TEXT,
+    koha         TEXT DEFAULT (datetime('now'))
+);
 """
+
+STATUSET = ["e pakonfirmuar", "e konfirmuar", "e hedhur poshtë"]
 
 
 def lidhu():
@@ -44,6 +56,11 @@ def lidhu():
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
     con.executescript(SKEMA)
+    # Migrim i butë: bazat e vjetra s'e kanë kolonën e hash-it
+    kolonat = {r["name"] for r in con.execute("PRAGMA table_info(articles)")}
+    if "hash_sha256" not in kolonat:
+        con.execute("ALTER TABLE articles ADD COLUMN hash_sha256 TEXT")
+        con.commit()
     return con
 
 
@@ -53,15 +70,43 @@ def ekziston_url(url):
         return con.execute("SELECT 1 FROM articles WHERE url = ?", (url,)).fetchone() is not None
 
 
-def ruaj_artikull(url, burimi, titulli, data, gjuha, teksti):
-    """Ruan artikullin; kthen True nëse ishte i ri, False nëse ishte dublikatë."""
+def ruaj_artikull(url, burimi, titulli, data, gjuha, teksti, hash_sha256=None):
+    """Ruan artikullin; kthen True nëse ishte i ri, False nëse ishte dublikatë.
+    hash_sha256 = gjurma e tekstit bruto kur u mblodh (prova nëse faqja ndryshon më vonë)."""
     with closing(lidhu()) as con, con:
         cur = con.execute(
-            "INSERT OR IGNORE INTO articles (url, burimi, titulli, data, gjuha, teksti) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (url, burimi, titulli, data, gjuha, teksti),
+            "INSERT OR IGNORE INTO articles (url, burimi, titulli, data, gjuha, teksti, "
+            "hash_sha256) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (url, burimi, titulli, data, gjuha, teksti, hash_sha256),
         )
         return cur.rowcount == 1
+
+
+def plotreso_hash(funksioni_hash):
+    """Hash për artikujt e vjetër që s'e kanë. Vetëm ku teksti është ende bruto
+    (pa përkthim), sepse processor.py e pastron dhe e pret tekstin. Kthen numrin."""
+    with closing(lidhu()) as con, con:
+        rreshtat = con.execute("SELECT id, teksti FROM articles WHERE hash_sha256 IS NULL "
+                               "AND teksti_perkthyer IS NULL AND teksti IS NOT NULL").fetchall()
+        for r in rreshtat:
+            con.execute("UPDATE articles SET hash_sha256 = ? WHERE id = ?",
+                        (funksioni_hash(r["teksti"]), r["id"]))
+        return len(rreshtat)
+
+
+def ruaj_vendimin(url_kryesor, statusi, shenimi=""):
+    """Ruan (ose zëvendëson) vendimin e analistit për një ngjarje."""
+    if statusi not in STATUSET:
+        raise ValueError(f"Status i panjohur: {statusi}")
+    with closing(lidhu()) as con, con:
+        con.execute("INSERT OR REPLACE INTO vendimet (url_kryesor, statusi, shenimi, koha) "
+                    "VALUES (?, ?, ?, datetime('now'))", (url_kryesor, statusi, shenimi))
+
+
+def vendimet():
+    """Kthen {url_kryesor: {statusi, shenimi, koha}}."""
+    with closing(lidhu()) as con:
+        return {r["url_kryesor"]: dict(r) for r in con.execute("SELECT * FROM vendimet")}
 
 
 def artikuj_te_paperpunuar(limit=100):
@@ -116,6 +161,12 @@ def ruaj_besueshmerine(event_id, pike, detajet):
     with closing(lidhu()) as con, con:
         con.execute("UPDATE events SET besueshmeria = ?, detajet_json = ? WHERE id = ?",
                     (pike, json.dumps(detajet, ensure_ascii=False), event_id))
+
+
+def fillimi_i_mbledhjes():
+    """Kur u mblodh artikulli i parë (për patterns.py: sa histori kemi)."""
+    with closing(lidhu()) as con:
+        return con.execute("SELECT MIN(mbledhur_me) FROM articles").fetchone()[0]
 
 
 def fshi_ngjarjet():

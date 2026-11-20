@@ -6,3 +6,7 @@ __pycache__/
 # Konfigurimi i mjeteve lokale (Claude Code): mbetet vetëm në këtë kompjuter
 CLAUDE.md
 .claude/
+# Skedarët e ekzekutimit lokal (ekzekuto.py)
+pipeline.log
+pipeline.lock
+orari.json
