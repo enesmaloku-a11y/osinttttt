@@ -5,6 +5,7 @@ Nis me:  streamlit run dashboard.py
 import json
 import sqlite3
 
+import altair as alt
 import folium
 import pandas as pd
 import streamlit as st
@@ -84,6 +85,32 @@ with tab_ngj:
     if ngjarjet.empty:
         st.info("Ende s'ka ngjarje. Ato shfaqen këtu pasi të shtohen extractor.py dhe correlator.py.")
     else:
+        # Kronologjia: një pikë për çdo ngjarje, sipas datës dhe llojit
+        st.subheader("Kronologjia")
+        nivelet = {"green": "≥ 70%", "orange": "40–70%", "red": "< 40%", "gray": "e pavlerësuar"}
+        k = ngjarjet.assign(
+            dita=pd.to_datetime(ngjarjet["data"], errors="coerce"),
+            lloji=ngjarjet["lloji"].fillna("other"),
+            burime=ngjarjet["burimet"].apply(lambda b: len(json.loads(b))),
+            niveli=ngjarjet["ngjyra"].map(nivelet),
+        ).dropna(subset=["dita"])
+        grafiku = alt.Chart(k).mark_circle(opacity=0.8).encode(
+            # ngjarjet kanë vetëm datë (pa orë), ndaj boshti tregon ditë
+            x=alt.X("dita:T", title="Data", axis=alt.Axis(format="%d %b", tickCount="day"),
+                    scale=alt.Scale(padding=30)),
+            y=alt.Y("lloji:N", title="Lloji", axis=alt.Axis(labelLimit=250)),
+            size=alt.Size("burime:Q", title="Burime", scale=alt.Scale(range=[80, 500], zero=False),
+                          legend=alt.Legend(format="d", tickMinStep=1)),
+            color=alt.Color("niveli:N", title="Besueshmëria",
+                            scale=alt.Scale(domain=list(nivelet.values()),
+                                            range=list(nivelet.keys()))),
+            tooltip=[alt.Tooltip("dita:T", title="Data"), alt.Tooltip("titulli:N", title="Ngjarja"),
+                     alt.Tooltip("besueshmeria:N", title="Besueshmëria"),
+                     alt.Tooltip("burime:Q", title="Burime")],
+        )
+        st.altair_chart(grafiku, use_container_width=True)
+        st.caption("Çdo pikë është një ngjarje. Madhësia tregon numrin e burimeve.")
+
         for _, e in ngjarjet.sort_values("data", ascending=False).iterrows():
             with st.expander(f"{e['data'][:10]} · {e['titulli']} · besueshmëria {e['besueshmeria']}"):
                 st.write(f"**Lloji:** {e['lloji'] or '-'}  ·  **Vendi:** {e['vendi'] or '-'}  ·  "
