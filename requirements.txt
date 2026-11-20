@@ -1,0 +1,8 @@
+feedparser
+trafilatura
+gdeltdoc
+langdetect
+streamlit
+folium
+streamlit-folium
+pandas
