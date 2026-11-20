@@ -2,7 +2,7 @@
 
 Nis me:  python eval/evaluate.py
 
-- gold.jsonl ka 30 artikuj SINTETIKË (të shkruar nga ekipi, jo lajme reale) në sq/sr/en,
+- gold.jsonl ka artikuj SINTETIKË (të shkruar nga ekipi, jo lajme reale) në sq/sr/en,
   me përgjigjen e saktë te "pritet". Në prezantim thuaj qartë që janë sintetikë.
 - Kalon të njëjtin pipeline si sistemi: processor -> extractor -> correlator -> scoring.
 - Përdor bazë të veçantë eval/eval.db (rikrijohet çdo herë); osint.db nuk preket.

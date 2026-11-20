@@ -20,13 +20,19 @@ FJALE_KYCE = re.compile(
     r"terror|protest|kufi|incident|ushtri|fsk|kfor|eulex|trazir|dhun|"
     r"uhapš|ubi[jos]|ubistv|napad|eksploz|oružj|ranjen|granic|vojsk|bezbed|nered|"
     r"полиц|ухапш|убиј|убист|напад|експлоз|оружј|рањен|границ|војск|безбед|"
-    r"police|kill|attack|explos|weapon|injur|border|troops|smuggl|riot|clash|shoot",
+    r"police|kill|attack|explos|weapon|injur|border|troops|smuggl|riot|clash|shoot|"
+    # Kibernetikë, infrastrukturë dhe dezinformim (sq, sr latin + cirilik, en)
+    r"kibernet|haker|hack|ddos|sajber|cyber|ransomware|malware|data breach|"
+    r"sabot|rrym|nënstacion|ujësjellës|struj|trafostanic|dalekovod|vodovod|infrastrukt|"
+    r"outage|blackout|power cut|substation|infrastruct|"
+    r"dezinform|disinform|rrem[eë]|lažn|fake news|false (?:claim|report)|"
+    r"сајбер|хакер|саботаж|струј|трафостаниц|далековод|водовод|инфраструкт|дезинформ|лажн",
     re.I,
 )
 
 LLOJET = ["violence", "murder", "arrest", "explosion_weapons", "border_incident",
           "protest_unrest", "interethnic", "police_military_operation", "cyber",
-          "court_case", "other"]
+          "infrastructure_disruption", "disinformation", "court_case", "other"]
 
 # Aktorët ruhen vetëm nëse duken si institucion/grup, kurrë si emër personi
 INSTITUCION = re.compile(
@@ -73,8 +79,13 @@ Answer with JSON only, exactly these keys:
  "killed": number or null, "injured": number or null, "arrested": number or null}}
 A security event is: violence, murder, arrest, attack, explosion, weapons find,
 border incident, protest or unrest, interethnic incident, police or military
-operation, cyber attack, terrorism. Politics, economy, sport, culture and
-statements without an incident are NOT security events.
+operation, cyber attack (DDoS, hacking, data leak, ransomware), terrorism,
+sabotage or suspicious disruption of power, water, telecom or transport
+("infrastructure_disruption"), and false or misleading claims about security
+incidents spreading publicly, even when officials deny them ("disinformation").
+Planned maintenance, ordinary technical faults, politics, economy, sport,
+culture and statements without an incident are NOT security events.
+An explosion is "explosion_weapons" even if it cuts power or water.
 A court verdict or trial about an older crime is type "court_case", and its
 event_date is the date of the verdict.
 
@@ -160,6 +171,12 @@ if __name__ == "__main__":
     assert fshi_emrat("Kosovo Police arrested two in North Mitrovica") == \
         "Kosovo Police arrested two in North Mitrovica"
     assert fshi_emrat("Kosovo Police Officer Triumf Riza") == "Kosovo Police [person]"
+    # Filtri duhet të kapë edhe kibernetikën, infrastrukturën dhe dezinformimin
+    for t in ("Hakerët publikuan të dhëna", "Sever Kosova ostao bez struje", "Саботажа далековода",
+              "Fake news about poisoned water", "Lajme të rreme për ujin"):
+        assert ka_fjale_sigurie({"titulli": t, "teksti": ""}), t
+    assert not ka_fjale_sigurie({"titulli": "Kosova fiton ndeshjen miqësore", "teksti": ""})
+    assert valido({"type": "disinformation"}, "2026-11-18")["type"] == "disinformation"
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 20
     model, filtruar, gabime, ngjarje = perpuno(n)
     print(f"\nModeli: {model} artikuj ({ngjarje} ngjarje sigurie). "
