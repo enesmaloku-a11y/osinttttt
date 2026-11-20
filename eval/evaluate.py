@@ -11,7 +11,6 @@ Nis me:  python eval/evaluate.py
 import json
 import sys
 import time
-import urllib.request
 from collections import defaultdict
 from pathlib import Path
 
@@ -44,15 +43,6 @@ def lexo_gold():
 
 def url_e(g):
     return f"gold://{g['id']}"
-
-
-def ollama_gati():
-    baza = processor.OLLAMA_URL.split("/api/")[0]
-    try:
-        urllib.request.urlopen(f"{baza}/api/tags", timeout=5)
-        return True
-    except Exception:
-        return False
 
 
 def ekzekuto(gold):
@@ -194,7 +184,7 @@ def kontrollo():
 if __name__ == "__main__":
     kontrollo()
     gold = lexo_gold()
-    if not ollama_gati():
+    if not processor.ollama_gati():
         sys.exit("Ollama nuk po punon. Nise me 'ollama serve' dhe provo përsëri.")
     print(f"Gold set: {len(gold)} artikuj. Pipeline-i po kalon (mund të zgjasë disa minuta)...")
     rezultatet, ngjarjet, sekonda, info = ekzekuto(gold)

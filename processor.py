@@ -46,6 +46,16 @@ def ndaj_ne_copa(teksti):
     return copa
 
 
+def ollama_gati():
+    """True nëse Ollama lokal përgjigjet (kontroll i shpejtë para pipeline-it)."""
+    baza = OLLAMA_URL.split("/api/")[0]
+    try:
+        urllib.request.urlopen(f"{baza}/api/tags", timeout=5)
+        return True
+    except Exception:
+        return False
+
+
 def pyet_ollama(prompt, si_json=False):
     """Thirrje e thjeshtë te Ollama lokal; kthen vetëm përgjigjen (pa <think>).
     si_json=True e detyron modelin të kthejë JSON të vlefshëm."""
