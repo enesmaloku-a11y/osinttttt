@@ -12,6 +12,7 @@ import json
 import sys
 import time
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
 
 DOSJA = Path(__file__).resolve().parent
@@ -25,6 +26,7 @@ import scoring  # noqa: E402
 
 GOLD = DOSJA / "gold.jsonl"
 DB_EVAL = DOSJA / "eval.db"
+REZULTATI = DOSJA / "rezultati.json"  # e lexon dashboard-i
 # shortcut: supozim për kohën e analistit; zëvendësoje me matje reale nëse e keni
 MINUTA_MANUALE = 3
 
@@ -47,7 +49,8 @@ def url_e(g):
 
 def ekzekuto(gold):
     """Fut gold set-in në eval.db dhe kalon pipeline-in.
-    Kthen ({id: JSON i extractor}, [[id, ...] për çdo ngjarje], sekonda, info)."""
+    Kthen ({id: JSON i extractor}, [[id, ...] për çdo ngjarje], sekonda, info).
+    info["rajonale"]: për çdo ngjarje, flamuri "rajonale" që vendosi correlator.py."""
     if DB_EVAL.exists():
         DB_EVAL.unlink()
     db.DB_PATH = str(DB_EVAL)
@@ -65,8 +68,11 @@ def ekzekuto(gold):
 
     id_e = {url_e(g): g["id"] for g in gold}
     rezultatet = {id_e[r["url"]]: json.loads(r["rezultati_json"]) for r in db.artikuj_te_nxjerre()}
-    ngjarjet = [[id_e[u] for u in json.loads(e["burimet"])] for e in db.ngjarjet()]
-    info = {"filtruar": filtruar, "gabime": gabime_perkthimi + gabime_nxjerrje}
+    te_gjitha = db.ngjarjet()
+    ngjarjet = [[id_e[u] for u in json.loads(e["burimet"])] for e in te_gjitha]
+    info = {"filtruar": filtruar, "gabime": gabime_perkthimi + gabime_nxjerrje,
+            "rajonale": [json.loads(e["detajet_json"] or "{}").get("rajonale") is True
+                         for e in te_gjitha]}
     return rezultatet, ngjarjet, sekonda, info
 
 
@@ -74,9 +80,10 @@ def pjese(a, b):
     return a / b if b else 0.0
 
 
-def mat(gold, rezultatet, ngjarjet):
+def mat(gold, rezultatet, ngjarjet, rajonale=None):
     """Krahason parashikimet me gold set-in dhe kthen metrikat.
-    rezultatet: {id: JSON i extractor.py}; ngjarjet: [[id, ...], ...] nga correlator.py."""
+    rezultatet: {id: JSON i extractor.py}; ngjarjet: [[id, ...], ...] nga correlator.py;
+    rajonale: [bool, ...] flamuri "rajonale" i çdo ngjarjeje (None = s'kontrollohet)."""
     tp = fp = fn = tn = lloji_ok = kosova_ok = 0
     gjuhet = defaultdict(lambda: {"tp": 0, "fp": 0, "fn": 0})
     mungojne, alarme, lloji_gabim = [], [], []
@@ -103,17 +110,23 @@ def mat(gold, rezultatet, ngjarjet):
         else:
             tn += 1
 
-    # Korrelimi: correlator.py mban vetëm ngjarjet në Kosovë, ndaj krahasojmë vetëm ato
+    # Korrelimi: correlator.py mban të gjitha ngjarjet e sigurisë, edhe ato rajonale
     gjuha = {g["id"]: g["gjuha"] for g in gold}
     grupi = {g["id"]: g["pritet"]["grupi"] or g["id"] for g in gold}
-    te_pritura = defaultdict(set)
+    te_pritura, rajonale_pritura = defaultdict(set), set()
     for g in gold:
-        if g["pritet"]["is_security_event"] and g["pritet"]["in_kosovo"]:
+        if g["pritet"]["is_security_event"]:
             te_pritura[g["pritet"]["grupi"]].add(g["id"])
+            if not g["pritet"]["in_kosovo"]:
+                rajonale_pritura.add(g["pritet"]["grupi"])
     parashikuara = [set(n) for n in ngjarjet]
     sakta = {k for k, ids in te_pritura.items() if ids in parashikuara}
     shumegjuhesh = {k for k, ids in te_pritura.items() if len({gjuha[i] for i in ids}) > 1}
     bashkime_gabim = sum(1 for n in parashikuara if len({grupi[i] for i in n}) > 1)
+    # Rajonale e saktë = grupi i bashkuar saktë DHE correlator e shënoi "rajonale: True"
+    flamuri = {frozenset(n): f for n, f in zip(parashikuara, rajonale or [])}
+    rajonale_sakta = {k for k in rajonale_pritura & sakta
+                      if rajonale is None or flamuri.get(frozenset(te_pritura[k])) is True}
 
     return {
         "precision": pjese(tp, tp + fp), "recall": pjese(tp, tp + fn),
@@ -126,6 +139,8 @@ def mat(gold, rezultatet, ngjarjet):
         "bashkime_gabim": bashkime_gabim,
         "mungojne": mungojne, "alarme": alarme, "lloji_gabim": lloji_gabim,
         "ngjarje_gabim": sorted(set(te_pritura) - sakta),
+        "rajonale_sakta": len(rajonale_sakta), "rajonale_gjithsej": len(rajonale_pritura),
+        "rajonale_gabim": sorted(rajonale_pritura - rajonale_sakta),
     }
 
 
@@ -142,6 +157,8 @@ def shfaq(m, sekonda, n, info):
     print(f"Ngjarje të bashkuara saktë: {m['ngjarje_sakta']}/{m['ngjarje_gjithsej']}"
           f"  (shumëgjuhëshe {m['shumegjuhesh_sakta']}/{m['shumegjuhesh_gjithsej']})")
     print(f"Bashkime të gabuara:    {m['bashkime_gabim']}")
+    print(f"Ngjarje rajonale saktë: {m['rajonale_sakta']}/{m['rajonale_gjithsej']}"
+          "  (jashtë Kosovës, me flamurin 'rajonale')")
     print(f"Koha:                   {sekonda:.0f} s ({pjese(sekonda, n):.1f} s/artikull) kundrejt "
           f"~{manuale} min manualisht (supozim {MINUTA_MANUALE} min/artikull)")
     print(f"Filtruar pa model:      {info['filtruar']} · gabime të modelit: {info['gabime']}")
@@ -154,6 +171,17 @@ def shfaq(m, sekonda, n, info):
         print("Lloji gabim: " + "; ".join(m["lloji_gabim"]))
     if m["ngjarje_gabim"]:
         print(f"Ngjarje të pabashkuara saktë: {', '.join(m['ngjarje_gabim'])}")
+    if m["rajonale_gabim"]:
+        print(f"Rajonale gabim: {', '.join(m['rajonale_gabim'])}")
+
+
+def ruaj_rezultatin(m, sekonda, n):
+    """Shkruan eval/rezultati.json për dashboard-in."""
+    rezultati = {"koha": datetime.now().isoformat(timespec="seconds"), "modeli": processor.MODELI,
+                 "artikuj": n, "sekonda": round(sekonda, 1), "minuta_manuale": MINUTA_MANUALE,
+                 "metrikat": m}
+    with open(REZULTATI, "w", encoding="utf-8") as f:
+        json.dump(rezultati, f, ensure_ascii=False, indent=2)
 
 
 def kontrollo():
@@ -180,6 +208,25 @@ def kontrollo():
     m = mat(gold, rez, [["a1", "a2"], ["a3"]])
     assert m["ngjarje_sakta"] == 1 and m["shumegjuhesh_sakta"] == 1 and m["bashkime_gabim"] == 0, m
 
+    # Rasti rajonal: E3 ndodhi jashtë Kosovës dhe u raportua në dy gjuhë
+    pritet_r = {"is_security_event": True, "in_kosovo": False, "type": ["explosion_weapons"], "grupi": "E3"}
+    gold_r = gold + [{"id": "a5", "gjuha": "sq", "pritet": pritet_r},
+                     {"id": "a6", "gjuha": "sr", "pritet": pritet_r}]
+    rez_r = {**rez, **{i: {"is_security_event": True, "in_kosovo": False, "type": "explosion_weapons"}
+                       for i in ("a5", "a6")}}
+    m = mat(gold_r, rez_r, [["a1", "a2"], ["a3"], ["a5", "a6"]], [False, False, True])
+    assert (m["rajonale_sakta"], m["rajonale_gjithsej"], m["rajonale_gabim"]) == (1, 1, []), m
+    assert (m["ngjarje_sakta"], m["ngjarje_gjithsej"], m["shumegjuhesh_gjithsej"]) == (2, 3, 2), m
+    assert (m["tp"], m["kosova_ok"], m["bashkime_gabim"]) == (4, 4, 0), m  # a1, a2, a5, a6
+    # Grupi i saktë por pa flamurin "rajonale" -> s'numërohet si rajonale e saktë
+    m = mat(gold_r, rez_r, [["a1", "a2"], ["a3"], ["a5", "a6"]], [False, False, False])
+    assert (m["rajonale_sakta"], m["rajonale_gabim"], m["ngjarje_sakta"]) == (0, ["E3"], 2), m
+    # Grupi i ndarë në dy -> as ngjarje e saktë, as rajonale e saktë
+    m = mat(gold_r, rez_r, [["a1", "a2"], ["a3"], ["a5"], ["a6"]], [False, False, True, True])
+    assert (m["rajonale_sakta"], m["ngjarje_sakta"]) == (0, 1), m
+    # Pa flamuj (rajonale=None) mjafton grupi i saktë
+    assert mat(gold_r, rez_r, [["a5", "a6"]])["rajonale_sakta"] == 1
+
 
 if __name__ == "__main__":
     kontrollo()
@@ -188,4 +235,7 @@ if __name__ == "__main__":
         sys.exit("Ollama nuk po punon. Nise me 'ollama serve' dhe provo përsëri.")
     print(f"Gold set: {len(gold)} artikuj. Pipeline-i po kalon (mund të zgjasë disa minuta)...")
     rezultatet, ngjarjet, sekonda, info = ekzekuto(gold)
-    shfaq(mat(gold, rezultatet, ngjarjet), sekonda, len(gold), info)
+    metrikat = mat(gold, rezultatet, ngjarjet, info["rajonale"])
+    shfaq(metrikat, sekonda, len(gold), info)
+    ruaj_rezultatin(metrikat, sekonda, len(gold))
+    print(f"\nU ruajt {REZULTATI}")
