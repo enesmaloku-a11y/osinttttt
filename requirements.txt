@@ -3,6 +3,7 @@ trafilatura
 gdeltdoc
 langdetect
 streamlit
+altair
 folium
 streamlit-folium
 pandas
