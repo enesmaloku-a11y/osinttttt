@@ -3,3 +3,6 @@ venv/
 __pycache__/
 # Baza ka tekstin e plotë të artikujve (të drejtat e autorit, emra në tekst): mos e publiko
 *.db
+# Konfigurimi i mjeteve lokale (Claude Code): mbetet vetëm në këtë kompjuter
+CLAUDE.md
+.claude/
