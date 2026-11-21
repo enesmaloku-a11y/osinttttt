@@ -17,7 +17,7 @@ Fokusi: **kërcënimet hibride ndaj FSK-së dhe sigurisë së Kosovës, sidomos 
 | 7 | `rreziku.py` | Rreziku 0–100 me rregulla, prioriteti (URGJENTE/RAPORT/MONITORIM/ARKIV) dhe kodi NATO Admiralty |
 | - | `kercenimet.py` | Taksonomia: 14 kategori kërcënimesh hibride, aktorët, shenjestrat, fjalët kyçe sq/sr/en |
 | - | `raporti.py` | Raporti ditor një faqe: BLUF, Urgjente, Raporte, trendet, boshllëqet, burimet |
-| - | `dashboard.py` | Pamja e analistit: Urgjente, Raporte, harta, kronologjia, taksonomia, burimet, vlerësimi |
+| - | `dashboard.py` | Pamja e analistit: Përmbledhja (rrezik × besueshmëri, Serbia, zonat), Urgjente, Raporte, harta, kronologjia, taksonomia, burimet, vlerësimi |
 | - | `db.py` | Ruajtja në SQLite (`osint.db`) |
 
 Modeli gjuhësor punon **lokalisht** përmes [Ollama](https://ollama.com), kështu që asnjë e dhënë nuk dërgohet te shërbime të jashtme.
@@ -45,19 +45,20 @@ streamlit run dashboard.py
 python raporti.py         # raporti ditor te raportet/ (e bën edhe main.py në fund)
 ```
 
-Artikujt që s'arrihen në një ekzekutim përpunohen herën tjetër, sepse rezultatet ruhen në `osint.db`. Çdo hap mund të niset edhe veçmas, p.sh. `python collector.py` ose `python extractor.py 10`.
+Tema e errët e dashboard-it vjen nga `.streamlit/config.toml` (lexohet kur `streamlit run` niset nga dosja e projektit). Artikujt që s'arrihen në një ekzekutim përpunohen herën tjetër, sepse rezultatet ruhen në `osint.db`. Çdo hap mund të niset edhe veçmas, p.sh. `python collector.py` ose `python extractor.py 10`.
 
 **Nga dashboard-i (skeda "Ekzekutimi"):** butoni **▶️ Ekzekuto tani** nis `ekzekuto.py` në sfond (log-u te `pipeline.log`, dy ekzekutime njëkohësisht nuk lejohen). Te **Automatikisht** zgjidhet çdo 1/2/3/6/12/24 orë: krijohet detyra "OSINT Kosova" në Windows Task Scheduler, që punon edhe kur dashboard-i është i mbyllur (kompjuteri ndezur dhe Ollama duke punuar).
 
 ## Mjetet për analistin
 
+- **Përmbledhja (skeda e parë):** një shikim që respekton filtrat e sidebar-it. **Ngjarjet më të reja:** 10 të fundit me prioritetin, datën, titullin dhe burimin. **Rreziku × besueshmëria:** çdo ngjarje është një pikë (ngjyra = prioriteti, madhësia = numri i burimeve); vija 80% ndan *URGJENTE për veprim* nga *URGJENTE për verifikim*, vijat 55 dhe 35 janë pragjet e rrezikut. Ngjarjet pa rrezik ose besueshmëri të llogaritur s'vizatohen dhe numërohen poshtë grafikut. **Serbia:** ngjarjet me aktor shtetin serb në 7 ditët deri te ngjarja më e re në bazë (jo deri sot), me ndryshimin kundrejt 7 ditëve para dhe 3 kategoritë më të shpeshta; aktori vjen nga modeli dhe duhet verifikuar. **Zonat:** Veriu, Kufiri/pikat kufitare, Prishtina, Kosova tjetër, Rajonale dhe Pa vend, sipas vendit që gjen `correlator.py` (lista te `ZONAT` në `dashboard.py`).
 - **Urgjente / Raporte:** prioriteti vjen nga matrica rrezik × besueshmëri (`rreziku.py`). Rrezik i lartë me besueshmëri nën 80% del si *URGJENTE për verifikim, jo për veprim*. Çdo ngjarje tregon pse ky rrezik, pse kjo besueshmëri, kodin Admiralty (p.sh. B2), boshllëqet dhe kontekstin e jashtëm.
 - **Filtrat:** zona (Kosovë/rajonale), prioriteti, kategoria, niveli i rrezikut dhe vendimi i analistit.
 - **Kërcënimet:** taksonomia me treguesit, aktorët tipikë dhe shembuj publikë me burim. **Burimet:** sa ngjarje sjell çdo medium dhe çfarë vendosi analisti, plus burimet me raste dezinformimi sipas EUvsDisinfo (pa llogari individuale). **Vlerësimi:** metrikat e `eval/rezultati.json` dhe të modelit të besueshmërisë.
 - **Raporti ditor:** butoni te skeda Urgjente ose `python raporti.py`; shkarkohet si Markdown.
 - **Vendimi i analistit:** te çdo ngjarje në dashboard zgjidhet ✅ e konfirmuar, ❓ e pakonfirmuar ose ❌ e hedhur poshtë, me shënim. Vendimet ruhen në tabelën `vendimet` (çelësi = një URL e ngjarjes, gjendet me `db.url_i_vendimit`), ndaj nuk humbin kur `correlator.py` i rindërton ngjarjet. Sidebar-i filtron sipas vendimit.
 - **Zbulimi i rritjeve (`patterns.py`):** alarm kur një komunë ka ≥ 3 ngjarje në 7 ditët e fundit dhe ≥ 2 herë mesataren javore të 28 ditëve para tyre (dysheme 0.5). Shfaqet në krye të dashboard-it dhe në fund të `main.py`; `python patterns.py` e printon veçmas.
-- **Saktësia e vendit dhe datës:** modeli jep `place_precision` (fshat/komunë/rajon) dhe `date_precision` (e saktë/e përafërt), të kontrolluara me rregulla. Ngjarjet e njohura vetëm në nivel rajoni ("veriu i Kosovës") vizatohen si rreth 15 km, jo si pikë, dhe marrin boshllëkun "vendi vetëm në nivel rajoni".
+- **Saktësia e vendit dhe datës:** modeli jep `place_precision` (fshat/komunë/rajon) dhe `date_precision` (e saktë/e përafërt), të kontrolluara me rregulla. Lajmet s'kanë GPS, prandaj harta e tregon vendin me saktësinë që dihet: rajoni ("veriu i Kosovës") si rreth ~15 km, komuna si rreth ~5 km rreth qendrës së saj, dhe vetëm fshati ose vendi i saktë si pikë. Ngjarjet e njohura vetëm në nivel rajoni marrin edhe boshllëkun "vendi vetëm në nivel rajoni". Harta hapet te Kosova, ka pamjet Rajoni, Ballkani dhe Evropa, dhe s'lëviz jashtë Evropës.
 - **Hash-i i artikujve:** `collector.py` ruan SHA-256 të tekstit bruto kur e mbledh. Te leximi i artikullit, "Verifiko tani" e rishkarkon faqen dhe tregon nëse lajmi u ndryshua, u fshi, apo ndryshoi vetëm teksti rreth tij (reklama, "më të lexuarat").
 
 ## Vlerësimi
@@ -83,5 +84,6 @@ Skripti kalon të njëjtin pipeline në bazë të veçantë (`eval/eval.db`) dhe
 - Aktori i kërcënimit vjen nga modeli gjuhësor dhe duhet verifikuar nga analisti.
 - Besueshmëria e mediave te `scoring.py` është vlerë fillestare që duhet ta rishikojë analisti.
 - Numrat e vlerësimit vijnë nga të dhëna sintetike; me lajme reale pritet të jenë më të ulët.
+- Harta kërkon internet (Leaflet dhe sfondi OpenStreetMap ngarkohen nga rrjeti); pa internet nuk shfaqet, por Përmbledhja, kronologjia dhe listat punojnë.
 - `patterns.py` jep alarme vetëm pas 5 javësh mbledhjeje (para kësaj mesatarja s'dihet); deri atëherë dashboard-i e thotë këtë.
 - Hash-i ndryshon edhe kur portali shton vetëm reklama; krahasimi rresht për rresht bëhet vetëm për artikujt ende të papërkthyer (processor.py e pastron tekstin).
