@@ -187,7 +187,7 @@ with k_mbl:
         st.info("Demo në cloud: mbledhja punon vetëm në laptopin me Ollama.")
     elif ngrire:
         st.warning("Etiketim në vazhdim: mbledhja është e ngrirë.")
-    if st.button("Mblidh lajmet tani", type="primary", key="ekz_sidebar", use_container_width=True,
+    if st.button("Mblidh lajmet tani", type="primary", key="ekz_sidebar", width="stretch",
                  disabled=ngrire, help="Mbledh nga mediat RSS dhe GDELT, pastaj përkthen dhe analizon "
                                        "deri në 20 artikuj me modelin lokal (rreth 20–25 minuta)."):
         if ekzekuto.po_punon():
@@ -196,7 +196,7 @@ with k_mbl:
             ekzekuto.nis_ne_sfond(20)
             st.success("Mbledhja u nis në sfond. Ecuria: skeda 'Ekzekutimi'.")
     # Rifreskimi lexon sërish bazën (pa cache), që ngjarjet e reja të duken pa pritur 60 sekonda
-    if st.button("Rifresko pamjen", key="rifresko_sidebar", use_container_width=True):
+    if st.button("Rifresko pamjen", key="rifresko_sidebar", width="stretch"):
         st.cache_data.clear()
         st.rerun()
 with k_ngj:
@@ -259,19 +259,29 @@ def kartela(e, skeda):
     det, p = e["det"], raporti.prioriteti(e)
     pike, niveli, arsyet = raporti.rreziku(e)
     b = raporti.besueshmeria(e)
+    kodi = raporti.admiralty(e)
+    # Ripostimet s'numërohen: burimet e pavarura vijnë nga scoring.py (origjinat), jo nga numri i URL-ve
+    n_pav = det.get("burime_te_pavarura")
+    n_pav = n_pav if type(n_pav) is int and n_pav >= 0 else len(det.get("mediat") or [])
+    burime = " · :orange[1 burim i vetëm]" if n_pav == 1 else f" · {n_pav} origjina" if n_pav > 1 else ""
     koka = (f"{ETIKETA.get(p, ETIKETA[None])} {koha_e(e)} · {raporti.pastro(e['titulli'], 120)}"
-            f" · rreziku {pike if pike is not None else '–'} · besueshmëria {perqind(b)}{VENDIMI[e['statusi']]}")
+            f" · rreziku {pike if pike is not None else '–'} · besueshmëria {perqind(b)}"
+            + (f" · {kodi}" if kodi else "") + f"{burime}{VENDIMI[e['statusi']]}")
     with st.expander(koka):
-        kodi = raporti.admiralty(e)
         r1, r2, r3 = st.columns(3)
         r1.metric("Rreziku", f"{pike}/100" if pike is not None else "–", help="Sa e rëndë nëse është e vërtetë")
         r1.caption(f"Niveli: {niveli or '–'} · Prioriteti: {p or 'i pallogaritur'}")
         r2.metric("Besueshmëria", perqind(b), help="Gjasat që të jetë e vërtetë, nga provat")
-        r2.caption(f"Admiralty: {kodi or '–'} · Burime: {len(e['burimet_l'])}")
+        r2.caption(f"Admiralty: {kodi or '–'} · Burime: {len(e['burimet_l'])}, të pavarura: {n_pav}")
         r3.metric("Vendimi", e["statusi"].capitalize())
         r3.caption("Sistemi sugjeron, analisti vendos.")
         if p == "URGJENTE" and raporti.per_verifikim(e):
             st.warning("Për verifikim, jo për veprim: besueshmëria është nën 80% dhe s'ka konfirmim.")
+        sociale = sorted({m.split(":")[0] for m in det.get("mediat") or []
+                          if isinstance(m, str) and m.startswith(scoring.SOCIALE)})
+        if sociale:
+            st.info(f"Sinjal nga rrjetet sociale ({', '.join(sociale)}): për shqyrtim, jo konfirmim. Lidhjet "
+                    "origjinale janë te Burimet; statusi vjen vetëm nga vendimi i analistit.")
         # Lista e 21 kategorive (rreziku.py): kryesorja + shtesat, ndikimi dhe urgjenca
         v21 = det.get("v21") if isinstance(det.get("v21"), dict) else {}
         if v21:
@@ -546,7 +556,7 @@ with tab_per:
     with harta_k:
         st.subheader("Harta e situatës")
         (jug, per), (veri, lin) = PAMJET["Kosova"][0]
-        st_folium(harta_e(aktive), height=520, use_container_width=True, returned_objects=[], key="harta_per",
+        st_folium(harta_e(aktive), height=520, width="stretch", returned_objects=[], key="harta_per",
                   center=[(jug + veri) / 2, (per + lin) / 2], zoom=PAMJET["Kosova"][1])
     st.subheader("Ngjarjet më të reja")
     if aktive:
@@ -596,12 +606,12 @@ with tab_urg:
         st.success("S'ka ngjarje urgjente me këto filtra.")
 
     st.subheader("Raporti ditor")
-    if st.button("Gjenero raportin ditor"):
+    if st.button("Gjenero raportin ditor", icon=":material/description:"):
         st.session_state["raporti"] = str(raporti.gjenero())
     if st.session_state.get("raporti") and Path(st.session_state["raporti"]).exists():
         shtegu = Path(st.session_state["raporti"])
         teksti = shtegu.read_text(encoding="utf-8")
-        st.download_button("Shkarko raportin", teksti, file_name=shtegu.name, mime="text/markdown")
+        st.download_button("Shkarko raportin", teksti, icon=":material/download:", file_name=shtegu.name, mime="text/markdown")
         with st.expander("Shiko raportin", expanded=True):
             st.markdown(teksti)
 
@@ -623,7 +633,7 @@ with tab_ngj:
     fillimi = db.fillimi_i_mbledhjes()
     alarmet = patterns.rritjet(aktive, fillimi_mbledhjes=fillimi)
     for a in alarmet:
-        st.warning(patterns.pershkrim(a))
+        st.warning(patterns.pershkrim(a), icon=":material/warning:")
     if fillimi and ngj and not patterns.histori_e_mjaftueshme(fillimi, max(str(e["data"]) for e in ngj)):
         st.caption(f"Alarmet për rritje aktivizohen pas 5 javë mbledhjeje "
                    f"(mbledhja filloi më {str(fillimi)[:10]}).")
@@ -668,7 +678,7 @@ with tab_ngj:
                      alt.Tooltip("prioriteti:N", title="Prioriteti"), alt.Tooltip("rreziku:Q", title="Rreziku"),
                      alt.Tooltip("besueshmeria:N", title="Besueshmëria"), alt.Tooltip("burime:Q", title="Burime")],
         )
-        st.altair_chart(grafiku, use_container_width=True)
+        st.altair_chart(grafiku, width="stretch")
         st.caption("Çdo pikë është një ngjarje. Madhësia tregon numrin e burimeve.")
 
         st.subheader(f"Të gjitha ngjarjet ({len(ngj)})")
@@ -683,7 +693,7 @@ with tab_ker:
     st.dataframe(pd.DataFrame([{
         "Kategoria": c["emri"], "Rrezikshmëria bazë": c["rrezikshmeria_baze"],
         "Ngjarje tani": numri.get(i, 0), "Përshkrimi": c["pershkrimi"]}
-        for i, c in kercenimet.KATEGORITE.items()]), hide_index=True, use_container_width=True)
+        for i, c in kercenimet.KATEGORITE.items()]), hide_index=True, width="stretch")
     for i, c in kercenimet.KATEGORITE.items():
         if i == "tjeter":
             continue
@@ -717,7 +727,7 @@ with tab_bur:
         r["Besueshmëria e mediumit"] = besueshmeria_e(r["Burimi"])
     if rreshtat:
         st.dataframe(pd.DataFrame(sorted(rreshtat.values(), key=lambda r: -r["Ngjarje"])),
-                     hide_index=True, use_container_width=True,
+                     hide_index=True, width="stretch",
                      column_config={"Besueshmëria e mediumit": st.column_config.NumberColumn(format="%.2f")})
     else:
         st.caption("S'ka ende ngjarje.")
@@ -727,7 +737,7 @@ with tab_bur:
     if dez:
         st.caption("Sipas rasteve të EUvsDisinfo për Kosovën dhe rajonin. Kanalet në rrjete sociale grupohen "
                    "sipas platformës, pa emra llogarish.")
-        st.dataframe(pd.DataFrame(dez), hide_index=True, use_container_width=True,
+        st.dataframe(pd.DataFrame(dez), hide_index=True, width="stretch",
                      column_config={"url_shembull": st.column_config.LinkColumn("Rasti i fundit")})
     else:
         st.info("Lista mungon: vendos eksportin CSV te data/euvsdisinfo.csv (shih kontekst_dezinformim.py).")
@@ -794,7 +804,7 @@ with tab_art:
         .assign(data=lambda x: x["data"].dt.tz_convert("Europe/Belgrade")),  # ora e Kosovës
         column_config={"url": st.column_config.LinkColumn("URL"),
                        "data": st.column_config.DatetimeColumn("Data", format="YYYY-MM-DD HH:mm")},
-        hide_index=True, use_container_width=True, height=400,
+        hide_index=True, width="stretch", height=400,
     )
 
     # Leximi i një artikulli: origjinali dhe përkthimi krah për krah
@@ -830,8 +840,8 @@ with tab_ekz:
                         help="Më shumë artikuj = më shumë kohë (rreth 1 minutë për artikull me modelin aktual).")
     # Butoni është gjithmonë aktiv; bllokimi te ekzekuto.py s'lejon dy ekzekutime njëkohësisht
     if ekzekuto.po_punon():
-        st.info("Pipeline-i po punon tani. Shiko log-un më poshtë; kur të mbarojë, kliko 'Rifresko të dhënat'.")
-    if st.button("Ekzekuto tani", type="primary", disabled=ngrire):
+        st.info(icon=":material/hourglass_top:", body="Pipeline-i po punon tani. Shiko log-un më poshtë; kur të mbarojë, kliko 'Rifresko të dhënat'.")
+    if st.button("Ekzekuto tani", type="primary", disabled=ngrire, icon=":material/play_arrow:"):
         if ekzekuto.po_punon():
             st.warning("Një ekzekutim po punon tashmë. Prit sa të mbarojë, pastaj provo sërish.")
         else:
@@ -858,6 +868,6 @@ with tab_ekz:
 
     st.subheader("Log-u i fundit")
     st.code(ekzekuto.log_fundit(25), language=None)
-    if st.button("Rifresko të dhënat"):
+    if st.button("Rifresko të dhënat", icon=":material/refresh:"):
         st.cache_data.clear()
         st.rerun()

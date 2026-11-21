@@ -77,6 +77,38 @@ Në cloud (Linux, ose lokalisht me `OSINT_CLOUD=1`) dashboard-i krijon vetë `de
 2. Mos vendos `OSINT_DB`, `APIFY_TOKEN` apo `osint.db` në cloud: aty shkon vetëm demo-ja.
 3. Te **Settings → Sharing**, lejo vetëm email-et e ekipit dhe të jurisë.
 
+## Rrjetet sociale (Apify)
+
+`apify_burimi.py` importon postime nga Reddit, X dhe Telegram si **sinjale për shqyrtim**: burimi i gjurmueshëm (`Reddit:r/...`, `X:x.com`, `Telegram:kanali`), URL-ja origjinale, gjuha dhe data e publikimit (pa shpikur orën kur mungon). Autori, përmendjet dhe email-et s'ruhen. Burimet sociale marrin Admiralty F, numërohen si **një origjinë** (edhe kur i njëjti pretendim del në dy platforma) dhe konfirmimi vjen vetëm nga analisti. `main.py` dhe orari automatik s'nisin kurrë Actor-ë me pagesë.
+
+| Platforma | Statusi | Çfarë do të thotë |
+|---|---|---|
+| Reddit | në pritje të lejes | Importi real hapet kur marrëveshja mbulon mbledhjen, ruajtjen, analizën me model dhe shfaqjen te FSK-ja |
+| X | e provuar vetëm me të dhëna sintetike | Përmbajtja reale mbetet jashtë rrjedhës së FSK-së deri te një marrëveshje që e mbulon këtë përdorues |
+| Telegram | e provuar vetëm me të dhëna sintetike | Kushtet e licencimit të Telegram-it kufizojnë përdorimin me AI; lista `KANALET_TELEGRAM` është bosh |
+
+Statusi ndryshohet te `STATUSI` në `apify_burimi.py`, vetëm pasi leja të jetë verifikuar. Përmbajtja reale (dataset, run, nisje) refuzohet për çdo platformë që s'është "aktive me leje të verifikuar".
+
+```powershell
+python apify_burimi.py statusi
+python apify_burimi.py importo reddit --skedar shembuj\apify_reddit.json     # skedar lokal, offline
+python apify_burimi.py importo reddit --dataset DATASET_ID --maks 500         # dataset ekzistues (platformë aktive)
+python apify_burimi.py importo reddit --run RUN_ID                            # nga një ekzekutim i përfunduar
+python apify_burimi.py nis reddit 50                                          # me pagesë, vetëm me komandë
+```
+
+Token-i lexohet nga `APIFY_TOKEN` ose `~/.apify_token` dhe dërgohet vetëm në header (`Authorization: Bearer`), kurrë në URL, log ose Git. Dataset-i lexohet me faqe (`limit`/`offset`), deri në 2 000 rreshta për import. Nisja me pagesë ka kufi 200 rreshta dhe $0.30; nëse përgjigjja humbet, s'niset një e dytë derisa e para të importohet me `--run`. Gabimet 401/403/429, timeout dhe JSON i pavlefshëm japin status të qartë pa ndalur pjesën tjetër.
+
+**Demo offline me shembuj sintetikë** (pa token, pa pagesë):
+
+```powershell
+python demo.py
+python apify_burimi.py demo demo.db
+$env:OSINT_DB="demo.db"; python -m streamlit run dashboard.py
+```
+
+Shembujt janë te `shembuj/apify_*.json` (të shkruar nga ekipi, në shqip, serbisht dhe anglisht, me formatin e Actor-ëve). Te kartela e ngjarjes del "Sinjal nga rrjetet sociale" dhe analisti e konfirmon ose e hedh poshtë si çdo ngjarje tjetër.
+
 ## Mjetet për analistin
 
 - **Përmbledhja (skeda e parë):** një shikim që respekton filtrat e sidebar-it. **Ngjarjet më të reja:** 10 të fundit me prioritetin, datën, titullin dhe burimin. **Rreziku × besueshmëria:** çdo ngjarje është një pikë (ngjyra = prioriteti, madhësia = numri i burimeve); vija 80% ndan *URGJENTE për veprim* nga *URGJENTE për verifikim*, vijat 55 dhe 35 janë pragjet e rrezikut. Ngjarjet pa rrezik ose besueshmëri të llogaritur s'vizatohen dhe numërohen poshtë grafikut. **Serbia:** ngjarjet me aktor shtetin serb në 7 ditët deri te ngjarja më e re në bazë (jo deri sot), me ndryshimin kundrejt 7 ditëve para dhe 3 kategoritë më të shpeshta; aktori vjen nga modeli dhe duhet verifikuar. **Zonat:** Veriu, Kufiri/pikat kufitare, Prishtina, Kosova tjetër, Rajonale dhe Pa vend, sipas vendit që gjen `correlator.py` (lista te `ZONAT` në `dashboard.py`).

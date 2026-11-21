@@ -1,0 +1,13 @@
+[
+  {
+    "rowType": "message",
+    "url": "https://t.me/kanal_sintetik/101",
+    "channelUsername": "kanal_sintetik",
+    "text": "ХИТНО: камиони блокирају прелаз Брњак, Косово. Нема званичне потврде. (Синтетички пример тима.)",
+    "date": "2026-11-20T19:15:00+00:00",
+    "author": "nuk-ruhet",
+    "_demo": {"in_kosovo": true, "type": "protest_unrest", "summary": "Trucks reportedly block the Bernjak crossing",
+              "place": "Bërnjak", "place_precision": "village", "kategoria": "trazira_bllokada",
+              "aktori": "i_panjohur", "shenjestrat": ["institucione"], "lidhje_me_fsk": false}
+  }
+]
