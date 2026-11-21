@@ -191,6 +191,17 @@ def teksti_i_ngjarjes(con, e):
     return " ".join([e["titulli"]] + [(r["teksti_perkthyer"] or "")[:MAKS_ARTIKULL] for r in rreshtat])
 
 
+def eshte_dezinformim(e):
+    """Ngjarje dezinformimi sipas llojit të vjetër ose sipas kategorisë së taksonomisë (K3)."""
+    if e["lloji"] == "disinformation":
+        return True
+    try:
+        det = json.loads(e["detajet_json"] or "{}")
+    except ValueError:
+        return False
+    return isinstance(det, dict) and det.get("kategoria") == "dezinformim"
+
+
 def pasuro_te_gjitha():
     """Shton kontekstin EUvsDisinfo te çdo ngjarje dezinformimi. Kthen numrin e ngjarjeve që morën
     të paktën një rast. Kur mungojnë të dhënat ose ka gabim printon një rresht dhe kthen 0."""
@@ -200,7 +211,7 @@ def pasuro_te_gjitha():
         if not rastet:
             print("EUvsDisinfo: s'ka raste në cache, konteksti u anashkalua")
             return 0
-        ngjarjet = [e for e in db.ngjarjet() if e["lloji"] == "disinformation"]
+        ngjarjet = [e for e in db.ngjarjet() if eshte_dezinformim(e)]
         with closing(db.lidhu()) as con:
             tekstet = {e["id"]: teksti_i_ngjarjes(con, e) for e in ngjarjet}
         me_rast = 0
@@ -217,6 +228,84 @@ def pasuro_te_gjitha():
     except Exception as e:  # pipeline-i s'duhet të bjerë kurrë për shkak të këtij moduli
         print(f"EUvsDisinfo: konteksti u anashkalua ({type(e).__name__}: {e})")
         return 0
+
+
+# K5: burimet që përhapin dezinformim. Emri i kolonës së mediave te eksporti s'është verifikuar,
+# ndaj pranohen këto variante (pas normalizimit si te valido)
+KOLONAT_MEDIAT = ("outlets", "outlet", "mediaoutlets", "media")
+DOMEN = re.compile(r"^[a-z0-9.-]+\.[a-z]{2,}$")
+# Platformat sociale: (domenet, emri, domeni kanonik). Kanalet/llogaritë s'ruhen me emër,
+# grupohen në një hyrje për platformë, që të mos profilohet asnjë llogari individuale.
+PLATFORMAT = [(("t.me", "telegram.me"), "Telegram", "t.me"),
+              (("youtube.com", "youtu.be"), "YouTube", "youtube.com"),
+              (("facebook.com", "fb.com"), "Facebook", "facebook.com"),
+              (("vk.com",), "VK", "vk.com"),
+              (("x.com", "twitter.com"), "X", "x.com")]
+PA_DOMEN = "pa domen (të tjera)"
+
+
+def burimi_i(x):
+    """(emri, platforma, domeni) për një element të kolonës së mediave."""
+    x = x.strip()[:200]
+    if re.match(r"https?://", x, re.I):
+        try:
+            domeni = (urlsplit(x).hostname or "").lower()
+        except ValueError:
+            domeni = ""
+    else:
+        domeni = x.lower() if DOMEN.match(x.lower()) else ""
+    domeni = domeni.removeprefix("www.")
+    if not domeni:
+        # Pa domen (p.sh. "News Front"): pa emër, që të mos ruhet tekst i lirë i paverifikuar
+        return PA_DOMEN, "web", None
+    for domenet, platforma, kanonik in PLATFORMAT:
+        if any(domeni == d or domeni.endswith("." + d) for d in domenet):
+            return f"{platforma} (kanale të ndryshme)", platforma, kanonik
+    return domeni, "web", domeni
+
+
+def burimet_e_dezinformimit(skedari=None):
+    """Lista e burimeve që përhapin dezinformim për Kosovën/rajonin sipas rasteve EUvsDisinfo:
+    [{"emri","platforma","domeni","raste","rasti_i_fundit","url_shembull"}], renditur sipas
+    "raste". Lexon CSV-në drejtpërdrejt (jo cache-in). S'hedh exception: në gabim kthen []."""
+    skedari = Path(skedari or CSV)
+    try:
+        if not skedari.exists():
+            print(f"EUvsDisinfo: mungon {skedari}; s'ka listë burimesh")
+            return []
+        with open(skedari, encoding="utf-8-sig", newline="") as f:
+            rreshtat = list(csv.DictReader(f))
+        grupet = {}
+        for rreshti in rreshtat:
+            rasti = valido(rreshti)
+            if not rasti or not isinstance(rreshti, dict):
+                continue
+            r = {re.sub(r"[^a-z]", "", str(k).lower()): v for k, v in rreshti.items() if isinstance(v, str)}
+            kolona = next((r[k] for k in KOLONAT_MEDIAT if k in r), None)
+            if kolona is None:
+                print("EUvsDisinfo: CSV-ja s'ka kolonë mediash (outlets/media); s'ka listë burimesh")
+                return []
+            for x in re.split(r"[,;\n]", kolona):
+                if not x.strip():
+                    continue
+                emri, platforma, domeni = burimi_i(x)
+                g = grupet.setdefault((platforma, domeni or emri), {
+                    "emri": emri, "platforma": platforma, "domeni": domeni, "ids": set(), "rastet": []})
+                if rasti["id"] not in g["ids"]:
+                    g["ids"].add(rasti["id"])
+                    g["rastet"].append(rasti)
+        dalja = []
+        for g in grupet.values():
+            me_date = [r for r in g["rastet"] if r["data"]]
+            i_fundit = max(me_date, key=lambda r: r["data"]) if me_date else None
+            dalja.append({"emri": g["emri"], "platforma": g["platforma"], "domeni": g["domeni"],
+                          "raste": len(g["ids"]),
+                          "rasti_i_fundit": i_fundit["data"] if i_fundit else None,
+                          "url_shembull": i_fundit["url"] if i_fundit else None})
+        return sorted(dalja, key=lambda b: (-b["raste"], b["emri"]))
+    except Exception as e:  # pipeline-i s'duhet të bjerë kurrë për shkak të këtij moduli
+        print(f"EUvsDisinfo: lista e burimeve dështoi ({type(e).__name__}: {e})")
+        return []
 
 
 if __name__ == "__main__":
@@ -300,6 +389,41 @@ if __name__ == "__main__":
         assert [x["lloji"] for x in det["konteksti"]] == ["incident", "rast_i_ngjashem", "statistike"]
         assert ngj[id_kib]["detajet_json"] == "{}"  # ngjarjet e tjera s'preken
     CSV, DB_RASTET, db.DB_PATH = origjinalet
+
+    # 3) K5: burimet e dezinformimit nga një CSV sintetike (shtegu i përkohshëm jepet shprehimisht)
+    assert eshte_dezinformim({"lloji": "other", "detajet_json": '{"kategoria": "dezinformim"}'})
+    assert not eshte_dezinformim({"lloji": "cyber", "detajet_json": "{bosh"})
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        assert burimet_e_dezinformimit(Path(tmp, "mungon.csv")) == []
+        s1 = {**uji, "ID": "201", "Date": "2026-01-05", "Outlets": "sputniknews.com",
+              "URL": "https://euvsdisinfo.eu/report/a/"}
+        s2 = {**s1, "ID": "202", "Date": "2026-04-09", "Outlets": "https://www.sputniknews.com/x; News Front",
+              "URL": "https://euvsdisinfo.eu/report/b/"}
+        tg = {**s1, "ID": "203", "Date": "2026-02-01", "Outlets": "https://t.me/kanali_x",
+              "URL": "https://euvsdisinfo.eu/report/c/"}
+        jashte = {**s1, "ID": "204", "Title": "Ukraine is run by a junta", "Countries": "Ukraine",
+                  "Summary": "", "Outlets": "rt.com"}
+        http = {**s1, "ID": "205", "Outlets": "rt.com", "URL": "http://euvsdisinfo.eu/report/d/"}
+        skedari = Path(tmp, "burimet.csv")
+        with open(skedari, "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=list(s1))
+            w.writeheader()
+            w.writerows([s1, s2, tg, jashte, http])
+        b = burimet_e_dezinformimit(skedari)
+        assert [(x["emri"], x["platforma"], x["domeni"], x["raste"]) for x in b] == [
+            ("sputniknews.com", "web", "sputniknews.com", 2),
+            ("Telegram (kanale të ndryshme)", "Telegram", "t.me", 1),
+            (PA_DOMEN, "web", None, 1)], b
+        assert b[0]["rasti_i_fundit"] == "2026-04-09" and b[0]["url_shembull"] == s2["URL"]
+        teksti = json.dumps(b, ensure_ascii=False)
+        assert "kanali_x" not in teksti and "[person]" not in teksti and "News Front" not in teksti
+        assert "rt.com" not in teksti  # jashtë rajonit dhe http s'numërohen
+        # CSV pa kolonë mediash -> []
+        with open(skedari, "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=list(uji))
+            w.writeheader()
+            w.writerow(uji)
+        assert burimet_e_dezinformimit(skedari) == []
     print("Kontrollet kaluan.")
 
     # 3) Të dhënat reale: data/euvsdisinfo.csv dhe osint.db
