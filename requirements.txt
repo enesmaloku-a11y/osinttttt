@@ -1,10 +1,12 @@
-feedparser
-trafilatura
-gdeltdoc
-langdetect
-streamlit
-altair
-folium
-streamlit-folium
-pandas
-scikit-learn
+# Versione të testuara me Python 3.12 (kontrollo.py), 2026-11-21. Të gjitha lejojnë Python >= 3.11.
+# Varësitë e tërthorta (numpy, scipy...) s'janë fiksuar: pip zgjedh ato që i përshtaten Python-it tënd.
+feedparser==6.0.14
+trafilatura==2.3.1
+gdeltdoc==1.12.0
+langdetect==1.0.9
+streamlit==1.67.0
+altair==6.3.0
+folium==1.0.0
+streamlit-folium==0.27.4
+pandas==3.1.1
+scikit-learn==1.9.1

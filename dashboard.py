@@ -48,7 +48,7 @@ artikujt["grupi"] = artikujt["burimi"].where(~artikujt["burimi"].str.startswith(
 # ---------------- Filtrat ----------------
 # Butoni kryesor në krye të sidebar-it, që të duket gjithmonë (edhe në ekran të vogël)
 st.sidebar.header("Pipeline-i")
-if st.sidebar.button("▶️ Ekzekuto tani", type="primary", key="ekz_sidebar", use_container_width=True):
+if st.sidebar.button("▶️ Ekzekuto tani", type="primary", key="ekz_sidebar", width="stretch"):
     if ekzekuto.po_punon():
         st.sidebar.warning("Një ekzekutim po punon tashmë.")
     else:
@@ -157,7 +157,7 @@ with tab_ngj:
                      alt.Tooltip("besueshmeria:N", title="Besueshmëria"),
                      alt.Tooltip("burime:Q", title="Burime")],
         )
-        st.altair_chart(grafiku, use_container_width=True)
+        st.altair_chart(grafiku, width="stretch")
         st.caption("Çdo pikë është një ngjarje. Madhësia tregon numrin e burimeve.")
 
         for _, e in ngjarjet.sort_values("data", ascending=False).iterrows():
@@ -209,7 +209,7 @@ with tab_art:
         f.sort_values("data", ascending=False)[["data", "burimi", "gjuha", "titulli", "url"]],
         column_config={"url": st.column_config.LinkColumn("URL"),
                        "data": st.column_config.DatetimeColumn("Data", format="YYYY-MM-DD HH:mm")},
-        hide_index=True, use_container_width=True, height=400,
+        hide_index=True, width="stretch", height=400,
     )
 
     # Leximi i një artikulli: origjinali dhe përkthimi krah për krah
