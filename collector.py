@@ -39,8 +39,9 @@ FEEDS = {
     "KoSSev": "https://kossev.info/feed/",
     "Novosti": "https://novosti.rs/rss/vesti",
     "Danas": "https://www.danas.rs/feed/",
+    # Shërbimi "Srbija" nga faqja zyrtare e RSS-ve: slobodnaevropa.org/rssfeeds.
+    "RSE": "https://www.slobodnaevropa.org/api/zototl-vomx-tpepomq",
     # Informer nuk u gjet në /rss, /rss.xml, /feed, /feed/, /rss/all, /rss/vesti.
-    # RSE /api/ është feed rajonal me artikuj BiH/Kroaci, jo shërbimi serb i kërkuar.
     # MO Srbije: nuk u gjet RSS në faqen zyrtare ose shtigjet e zakonshme.
 }
 
@@ -52,12 +53,13 @@ BURIMET_INFO = {
     "KoSSev": dict(domeni="kossev.info", gjuha="sr", lloji="media", vendi="XK"),
     "Novosti": dict(domeni="novosti.rs", gjuha="sr", lloji="media", vendi="RS"),
     "Danas": dict(domeni="danas.rs", gjuha="sr", lloji="media", vendi="RS"),
+    "RSE": dict(domeni="slobodnaevropa.org", gjuha="sr", lloji="media", vendi="RS"),
 }
 AGENT = "osint-prototype/1.0"
 PUNETORE = 8  # sa shkarkime paralele
 # shortcut: kufi i fiksuar për kohën e përkthimit; rrite kur përpunimi të jetë më i shpejtë
 MAKS_PER_FEED = 15
-GDELT_PAUZA = 10
+GDELT_PAUZA = 30
 GDELT = "https://api.gdeltproject.org/api/v2/doc/doc"
 KOSOVA = re.compile(r"\b(kosov|kosmet|metohij|kosovsk|косов|космет|метохиј|priština|prishtin|pristina|приштин|mitrovic|митровиц|zvečan|звечан|leposavi|лепосави|zubin potok|зубин поток|jarinj|јарињ|brnjak|брњак|merdar|мердар|kfor|кфор|fsk|ksf)", re.I)
 
@@ -86,6 +88,9 @@ def _regex_ushtarak_dron():
 
 def ka_lidhje(burimi, titulli, permbledhja=""):
     info = BURIMET_INFO.get(burimi)
+    if info is None and burimi == "Informer":
+        # Filtri RS është gati, por feed-i i Informer nuk u gjet; burimi mbetet joaktiv.
+        info = dict(gjuha="sr", lloji="media", vendi="RS")
     if info is None and burimi == "MO Srbije":
         # Filtër i gatshëm për burimin zyrtar, por pa feed të verifikuar aktiv.
         info = dict(gjuha="sr", lloji="zyrtar", vendi="RS")
@@ -312,7 +317,9 @@ def verifiko(url, hash_i_ruajtur, teksti_bruto=None):
 def pergatit(burimi, url, titulli, data, permbledhja=""):
     """Merr tekstin e plotë dhe gjuhën; kthen dict gati për db (ose None)."""
     # Për burimet e reja përdoret teksti i botuar në RSS, me URL-në e origjinalit.
-    teksti = nxirr_tekstin(url) or pastro_html(permbledhja) or titulli
+    teksti_plote = nxirr_tekstin(url)
+    permbledhje_rss = pastro_html(permbledhja)
+    teksti = teksti_plote or permbledhje_rss or titulli
     if not teksti:
         return None
     # Hash-i merret mbi tekstin bruto, para se processor.py ta pastrojë/presë
@@ -324,17 +331,23 @@ def pergatit(burimi, url, titulli, data, permbledhja=""):
         gjuha = "sr"
     return dict(url=url, burimi=burimi, titulli=titulli, data=data,
                 gjuha=gjuha, teksti=teksti,
-                hash_sha256=gjurma(teksti))
+                hash_sha256=gjurma(teksti),
+                _teksti_lloji=("plote" if teksti_plote else
+                               "permbledhje" if permbledhje_rss else "deshtoi"))
 
 
-def ruaj_te_gjitha(detyrat):
+def ruaj_te_gjitha(detyrat, me_statistika=False):
     """Ekzekuton 'pergatit' paralelisht dhe ruan rezultatet. Kthen numrin e të rejave."""
     te_reja = 0
+    tekstet = {"plote": 0, "permbledhje": 0, "deshtoi": 0}
     with ThreadPoolExecutor(PUNETORE) as ex:
         for art in ex.map(lambda d: pergatit(*d), detyrat):
-            if art and db.ruaj_artikull(**art):
-                te_reja += 1
-    return te_reja
+            if art:
+                lloji = art.pop("_teksti_lloji", "deshtoi")
+                tekstet[lloji] += 1
+                if db.ruaj_artikull(**art):
+                    te_reja += 1
+    return (te_reja, tekstet) if me_statistika else te_reja
 
 
 def mblidh_rss(burimi, feed_url):
@@ -372,8 +385,10 @@ def mblidh_rss(burimi, feed_url):
         detyrat.sort(key=lambda d: d[3], reverse=True)
         teprica = max(0, len(detyrat) - MAKS_PER_FEED)
         detyrat = detyrat[:MAKS_PER_FEED]
-    te_reja = ruaj_te_gjitha(detyrat)
-    print(f"  {burimi}: {te_reja} të rinj, {filtruar} të filtruar, {jashte} jashtë domenit, {teprica} mbi kufirin")
+    te_reja, tekstet = ruaj_te_gjitha(detyrat, me_statistika=True)
+    print(f"  {burimi}: {te_reja} të rinj, {filtruar} të filtruar, {jashte} jashtë domenit, "
+          f"{teprica} mbi kufirin, {tekstet['plote']} tekst i plotë, "
+          f"{tekstet['permbledhje']} përmbledhje, {tekstet['deshtoi']} dështuar")
     return te_reja
 
 
@@ -429,16 +444,16 @@ def mblidh_gdelt(ora=None):
         # API publike, robots.txt i saj jep 404; robots mbetet aktiv për faqet e artikujve.
         status, trupi, content_type = _shkarko(url, "api.gdeltproject.org", 1_000_000,
                                               me_content_type=True)
-        for riprovim in range(2):
+        for riprovim in range(3):
             if status != 429 and not (trupi and b"please limit requests" in trupi.lower()):
                 break
-            print(f"  GDELT {emri}: HTTP 429/kufizim ritmi; riprovim {riprovim + 1}/2")
-            time.sleep(15 * (2 ** riprovim))
+            print(f"  GDELT {emri}: HTTP 429/kufizim ritmi; riprovim {riprovim + 1}/3")
+            time.sleep(30 * (2 ** riprovim))
             status, trupi, content_type = _shkarko(url, "api.gdeltproject.org", 1_000_000,
                                                    me_content_type=True)
         if status == 429 or (trupi and b"please limit requests" in trupi.lower()):
             deshtime += 1
-            print(f"  GDELT {emri}: dështoi pas 2 riprovimeve; HTTP {status}; Content-Type={content_type}; body={repr((trupi or b'')[:300])}")
+            print(f"  GDELT {emri}: dështoi pas 3 riprovimeve; HTTP {status}; Content-Type={content_type}; body={repr((trupi or b'')[:300])}")
             continue
         if trupi is None:
             deshtime += 1
@@ -487,7 +502,7 @@ def mblidh_te_gjitha():
 
 
 def kontrollo():
-    global _shkarko
+    global _shkarko, nxirr_tekstin, pergatit
     import scoring
     import inspect
     import contextlib
@@ -514,7 +529,9 @@ def kontrollo():
     assert ka_lidhje("Hibrid.info", "Lajm i rremë për FSK-në")
     assert ka_lidhje("KoSSev", "ransomware attack on servers")
     assert ka_lidhje("burim i vjetër", "tekst pa filtër")
-    assert ka_lidhje("RTS", "protest u Beogradu") is False
+    for media_rs in ("RTS", "Novosti", "Informer", "Danas", "RSE"):
+        assert ka_lidhje(media_rs, "protest u Beogradu") is False, media_rs
+    assert ka_lidhje("RSE", "Policia arrestoi të dyshuarit në Kosovë")
     assert ka_lidhje("RTS", "") is False and ka_lidhje("Koha", "") is True
     assert url_normalizuar("https://a.test/x/?utm_source=a&fbclid=z#f") == "https://a.test/x"
     assert normalizo_lidhjen_rss("http://www.rtklive.com/a", "rtklive.com") == "https://www.rtklive.com/a"
@@ -528,6 +545,25 @@ def kontrollo():
         assert i["gjuha"] in ("sr", "sq", "en") and i["lloji"] in ("media", "zyrtar")
         assert i["vendi"] in ("RS", "XK") and b in FEEDS
         assert b in scoring.MEDIAT
+    assert GDELT_PAUZA == 30
+    nxirr_vjeter, pergatit_vjeter, ruaj_vjeter = nxirr_tekstin, pergatit, db.ruaj_artikull
+    try:
+        nxirr_tekstin = lambda *_: "tekst i plotë " * 25
+        assert pergatit("RTK", "https://example.com/a", "titull", "2026-01-01", "rss")[
+            "_teksti_lloji"] == "plote"
+        nxirr_tekstin = lambda *_: ""
+        assert pergatit("RTK", "https://example.com/a", "titull", "2026-01-01", "përmbledhje RSS") [
+            "_teksti_lloji"] == "permbledhje"
+        assert pergatit("RTK", "https://example.com/a", "titull", "2026-01-01", "") [
+            "_teksti_lloji"] == "deshtoi"
+        llojet = iter(("plote", "permbledhje", "deshtoi"))
+        pergatit = lambda *_: {"_teksti_lloji": next(llojet, "deshtoi")}
+        db.ruaj_artikull = lambda **_: True
+        nr, numrat = ruaj_te_gjitha([(1,), (2,), (3,)], me_statistika=True)
+        assert nr == 3 and numrat == {"plote": 1, "permbledhje": 1, "deshtoi": 1}
+    finally:
+        nxirr_tekstin, pergatit = nxirr_vjeter, pergatit_vjeter
+        db.ruaj_artikull = ruaj_vjeter
     assert all(KOSOVA.search(q) for _, q in kerkesat_gdelt(0)[1:])
     assert not any(x in " ".join(q for _, q in kerkesat_gdelt(0)).lower()
                    for x in ("flood", "fire", "outage", "poplav", "požar", "përmbytje", "zjarr"))
@@ -539,11 +575,14 @@ def kontrollo():
     dl, sleep = _shkarko, time.sleep
     try:
         _shkarko = lambda *a, **kw: (429, None, "text/html")
-        time.sleep = lambda *_: None
+        pritjet = []
+        time.sleep = lambda *v: pritjet.extend(v)
         dalje = io.StringIO()
         with contextlib.redirect_stdout(dalje):
             assert mblidh_gdelt(0) == 0
-        assert "6 të dështuara" in dalje.getvalue(), dalje.getvalue()
+        assert "6 të dështuara" in dalje.getvalue() and "dështoi pas 3 riprovimeve" in dalje.getvalue()
+        assert pritjet.count(120) == 6 and pritjet.count(60) == 6
+        assert pritjet.count(30) == 11  # 6 kërkesa + 5 pauza ndërmjet grupeve
         _shkarko = lambda *a, **kw: (200, b"<html>proxy error</html>", "text/html")
         dalje = io.StringIO()
         with contextlib.redirect_stdout(dalje):
