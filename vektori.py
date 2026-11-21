@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import db
 
 EMRAT = ("n_mediat", "n_gjuhet", "n_artikuj", "besueshmeria_mediave", "konflikte",
-         "vend_i_sakte", "date_e_sakte", "burim_zyrtar", "ore_perhapje", "ka_rast_euvsdisinfo")
+         "vend_i_sakte", "date_e_sakte", "burim_zyrtar", "ore_perhapje", "ka_rast_euvsdisinfo", "n_kopje")
 INSTITUCION = re.compile(r"\b(polic|policij|polici|kfor|eulex|ministr|prokuror|gjykat|court|prosecutor|sudstvo)", re.I)
 
 
@@ -28,20 +28,22 @@ def ore_perhapje(urls):
     return min(168.0, (max(me_date) - min(me_date)).total_seconds() / 3600)
 
 
-def vektori(e) -> dict[str, float]:
+def vektori(e, *, det=None) -> dict[str, float]:
     from scoring import pike_detajesh, pike_mediash
 
     e = dict(e)
-    det = json.loads(e.get("detajet_json") or "{}")
-    urls = set(json.loads(e.get("burimet") or "[]"))
-    mediat = set(det.get("mediat") or [])
-    gjuhet = set(det.get("gjuhet") or [])
+    if det is None:
+        det = json.loads(e.get("detajet_json") or "{}")
+    urls = set(det.get("urlt_e_pavarura", json.loads(e.get("burimet") or "[]")))
+    mediat = set(det.get("mediat_e_pavarura", det.get("mediat")) or [])
+    gjuhet = set(det.get("gjuhet_e_pavarura", det.get("gjuhet")) or [])
+    n = det.get("burime_te_pavarura", len(mediat))
     zyrtar = any(INSTITUCION.search(a) for a in det.get("aktoret") or [] if isinstance(a, str))
     rast = any(isinstance(k, dict) and k.get("burimi") == "EUvsDisinfo" and
                k.get("lloji") == "rast_i_ngjashem" for k in det.get("konteksti") or [])
-    vlerat = (len(mediat), len(gjuhet), len(urls), pike_mediash(mediat) if mediat else 0,
-              len(pike_detajesh(det, len(mediat))[1]), det.get("saktesia_vendit") in ("village", "municipality"),
-              det.get("saktesia_dates") == "exact", zyrtar, ore_perhapje(sorted(urls)), rast)
+    vlerat = (n, len(gjuhet), len(urls), pike_mediash(mediat) if mediat else 0,
+              len(pike_detajesh(det, n)[1]), det.get("saktesia_vendit") in ("village", "municipality"),
+              det.get("saktesia_dates") == "exact", zyrtar, ore_perhapje(sorted(urls)), rast, len(det.get("kopjet") or []))
     return dict(zip(EMRAT, map(float, vlerat), strict=True))
 
 
