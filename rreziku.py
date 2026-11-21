@@ -73,9 +73,11 @@ def baza(kat):
 
 
 def statusi_i(e, vendimet):
-    """Vendimi i analistit; çelësi = URL e parë e ngjarjes (si te dashboard.py)."""
+    """Vendimi i analistit te cilado URL e ngjarjes (db.url_i_vendimit), që të mos humbasë kur
+    korrelimi sjell një artikull më të hershëm në vend të burimet[0]."""
+    vendimet = vendimet or {}
     try:
-        return (vendimet or {}).get(json.loads(e["burimet"] or "[]")[0], {}).get("statusi")
+        return vendimet.get(db.url_i_vendimit(json.loads(e["burimet"] or "[]"), vendimet), {}).get("statusi")
     except (ValueError, IndexError, TypeError, KeyError):
         return None
 
@@ -215,7 +217,9 @@ if __name__ == "__main__":
                 "besueshmeria": b, "burimet": json.dumps([url])}
     SERB = {"kategoria": "ushtarak_serbia", "aktori": "shteti_serb", "shenjestrat": ["fsk", "kfor_nato"],
             "mediat": ["Balkan Insight", "Koha", "N1 Serbia"], "gjuhet": ["en", "sq", "sr"]}
-    VEND = {"u8": {"statusi": "e hedhur poshtë"}, "u9": {"statusi": "e konfirmuar"}}
+    # Në formën e db.vendimet()
+    VEND = {"u8": {"statusi": "e hedhur poshtë", "koha": "2026-11-21 10:00:00"},
+            "u9": {"statusi": "e konfirmuar", "koha": "2026-11-21 11:00:00"}}
     DIZ = ((2, "dezinformim", "2026-11-18", None), (3, "dezinformim", "2026-11-15", None))
     BLL = ((12, "trazira_bllokada", "2026-11-21", "zvecan"), (13, "trazira_bllokada", "2026-11-20", "leposavi"))
     RASTET = [  # (ngjarja, detajet, te_tjerat, dez) -> (pike, niveli, prioriteti, kodi)
@@ -267,6 +271,10 @@ if __name__ == "__main__":
         assert r == vlereso(e, det, sot="2026-11-21", te_tjerat=tt, vendimet=VEND, dez=dez)  # idempotent
         assert json.dumps(det, sort_keys=True) == para  # det s'ndryshon
     assert "për verifikim" in vlereso(*RASTET[2][:2], sot="2026-11-21")["rreziku"]["arsyet"][-1]
+    # Vendimi gjendet edhe kur një artikull më i hershëm u bë burimet[0]
+    e = dict(ng("2026-11-20", "Zvečan", "Road blocked", 0.9), burimet=json.dumps(["i_ri", "u8"]))
+    assert statusi_i(e, VEND) == "e hedhur poshtë" and vlereso(e, {}, vendimet=VEND)["prioriteti"] == "ARKIV"
+    assert statusi_i(dict(e, burimet="[]"), VEND) is None and statusi_i(e, None) is None
     # Rajonalja me shenjestër në Kosovë ose me lidhje me FSK-në s'kufizohet
     parade_e, parade = RASTET[11][:2]
     for shtese in ({"shenjestrat": ["fsk"]}, {"lidhje_me_fsk": True}):
