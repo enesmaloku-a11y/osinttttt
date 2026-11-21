@@ -22,16 +22,22 @@ GOLD = Path(__file__).resolve().parent / "eval" / "gold.jsonl"
 def rezultati(g, perm, vendi):
     """JSON në formën e extractor.py, i ndërtuar nga etiketat e gold set-it."""
     p = g["pritet"]
+    kat = p.get("kategoria") or "tjeter"
     return {"is_security_event": p["is_security_event"], "in_kosovo": p["in_kosovo"],
             "type": (p["type"] or ["other"])[0], "summary": perm, "event_date": g["data"], "place": vendi,
             "place_precision": ("region" if vendi == "veri" else "municipality") if vendi else None,
             "date_precision": "exact", "actors": [], "killed": None, "injured": None,
-            "arrested": None, "demo": True}  # shortcut: place = emri kanonik ("mitrovic"), jo teksti i artikullit
+            "arrested": None, "demo": True,
+            # K2: gold-i jep disa kategori të pranueshme si listë; merret e para
+            "kategoria": kat[0] if isinstance(kat, list) else kat,
+            "aktori": p.get("aktori") or "i_panjohur", "shenjestrat": p.get("shenjestrat") or [],
+            "lidhje_me_fsk": p.get("lidhje_me_fsk") is True}  # shortcut: place = emri kanonik ("mitrovic"), jo teksti i artikullit
 
 
 def mbush(gold):
     import correlator
     import extractor
+    import rreziku
     import scoring
     # Përmbledhja dhe vendi i përbashkët për çdo grup ngjarjeje
     perm, vendi = {}, {}
@@ -51,6 +57,8 @@ def mbush(gold):
         db.sheno_perpunuar(aid, rezultati(g, perm[k], vendi[k]))
     n = correlator.korrelo()
     scoring.vlereso_te_gjitha()
+    # "Sot" = dita e fundit e gold set-it, që pikët e freskisë (dhe Urgjente) të mos ndryshojnë me kalendarin
+    rreziku.vlereso_te_gjitha(sot=max(g["data"] for g in gold))
     return n
 
 
@@ -66,5 +74,7 @@ if __name__ == "__main__":
     # Kontroll: të paktën një ngjarje u bashkua nga disa gjuhë, dhe asnjë pa burim
     assert n and all(json.loads(e["burimet"]) for e in ngj)
     assert any(len(json.loads(e["detajet_json"])["gjuhet"]) > 1 for e in ngj), "s'u bashkua asgjë"
+    prioritetet = {json.loads(e["detajet_json"]).get("prioriteti") for e in ngj}
+    assert {"URGJENTE", "RAPORT"} <= prioritetet, prioritetet
     print(f"{db.DB_PATH}: {len(gold)} artikuj sintetikë, {n} ngjarje.\n"
           f"Hap:  OSINT_DB={db.DB_PATH} streamlit run dashboard.py")
