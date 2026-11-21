@@ -12,3 +12,5 @@ CLAUDE.md
 pipeline.log
 pipeline.lock
 orari.json
+# Raportet ditore (raporti.py): kanë titujt e lajmeve, mbeten lokalisht
+raportet/

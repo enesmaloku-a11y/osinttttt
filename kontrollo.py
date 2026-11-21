@@ -25,6 +25,9 @@ KONTROLLET = [
     ("kontekst_kibernetik.py", ["-c", "import kontekst_kibernetik as k; k.kontrollet()"]),
     ("eval/evaluate.py", ["-c", "import sys; sys.path.insert(0, 'eval'); import evaluate as e; "
                     "getattr(e, 'kontrollo', lambda: None)(); e.lexo_gold()"]),
+    ("kercenimet.py", ["kercenimet.py"]),
+    ("rreziku.py", ["rreziku.py"]),
+    ("raporti.py", ["raporti.py", "2026-11-18"]),
     ("demo.py", ["demo.py"]),
     ("dashboard.py", ["-c", "from streamlit.testing.v1 import AppTest; "
                          "at = AppTest.from_file('dashboard.py', default_timeout=90).run(); "
