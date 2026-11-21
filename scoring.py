@@ -21,6 +21,7 @@ import db
 MODELI = Path("data/modeli_besueshmerise.json")
 VERSIONI_MODELit = 2  # V1 i trajtonte ripostimet si raportime të pavarura.
 MIN_ETIKETA, MIN_KLASA, MIN_RRITJA_AUC = 80, 20, 0.03
+VECORI_TE_LEJUARA = frozenset(EMRAT) - {"ka_rast_euvsdisinfo"}
 PERSHKRIMET = dict(zip(EMRAT, ("media të pavarura", "gjuhë", "artikuj", "besueshmëria e mediave",
     "konflikte në detaje", "vend i saktë", "datë e saktë", "aktor institucional i përmendur",
     "orë mes artikujve", "rast i ngjashëm nga EUvsDisinfo", "kopje të identifikuara")))
@@ -43,8 +44,8 @@ def lexo_modelin(shteg):
         emrat = m["veçoritë"]
         n, poz = m["n"], m["n_pozitive"]
         if (type(m["versioni"]) is not int or m["versioni"] != VERSIONI_MODELit
-                or not isinstance(emrat, list) or len(set(emrat)) != len(emrat)
-                or set(emrat) != set(EMRAT) - {"ka_rast_euvsdisinfo"}
+                or not isinstance(emrat, list) or not emrat or len(set(emrat)) != len(emrat)
+                or not set(emrat) <= VECORI_TE_LEJUARA
                 or not numer(m["intercepti"]) or type(n) is not int or type(poz) is not int
                 or n < MIN_ETIKETA or min(poz, n - poz) < MIN_KLASA):
             return None
@@ -55,7 +56,7 @@ def lexo_modelin(shteg):
         for k in ("mesatarja", "devijimi", "koeficientet"):
             if not isinstance(m[k], list) or len(m[k]) != len(emrat) or not all(map(numer, m[k])):
                 return None
-        if m["koeficientet"][emrat.index("n_kopje")] > 0:
+        if "n_kopje" in emrat and m["koeficientet"][emrat.index("n_kopje")] > 0:
             return None
         prec = m["metrikat"]["logjistik"]["precision_080"]
         if min(m["devijimi"]) <= 0 or (prec is not None and not (numer(prec) and 0 <= prec <= 1)):
@@ -103,15 +104,16 @@ PESHAT = {"burimet": 0.40, "mediat": 0.35, "detajet": 0.25}
 MEDIAT = {
     "Balkan Insight": 0.9, "Kallxo": 0.85, "RTK": 0.8, "Koha": 0.8, "N1 Serbia": 0.8,
     "Telegrafi": 0.6, "Gazeta Express": 0.6,
-    # Politikë korrigjimi dhe redaksi: https://hibrid.info/rreth-nesh/ dhe anëtarësi: https://members.efcsn.com/organization/action-for-democratic-society-ads-hibrid-info
-    "Hibrid.info": 0.8,
-    # Burim zyrtar i palës për veprimet e veta: https://www.kosovopolice.com/
-    "Policia e Kosovës": 0.7,
-    # Bazë e rubrikës. Pikët për korrigjime dhe anëtarësi mbeten të paverifikuara.
-    "RTS": 0.6,
-    # Pikë fillestare për burime të reja; vlerë fillestare, jo e matur.
-    "Kosovo Online": 0.6, "KoSSev": 0.6, "Novosti": 0.6, "Danas": 0.6, "RSE": 0.6,
-    "Informer": 0.6,
+    "Hibrid.info": 0.8,  # +0.1 korrigjime/impresum https://hibrid.info/rreth-nesh/ +0.1 EFCSN https://members.efcsn.com/organization/action-for-democratic-society-ads-hibrid-info
+    "Policia e Kosovës": 0.7,  # Zyrtar i palës për veprimet e veta. https://www.kosovopolice.com/
+    "MO Srbije": 0.7,  # Zyrtar i palës për veprimet e veta. Feed joaktiv. https://www.mod.gov.rs/lat/4884/o-ministarstvu-4884
+    "RTS": 0.6,  # Kontakt redaksie. Korrigjimet dhe anëtarësia të paverifikuara. https://www.rts.rs/lat/kontakt.html
+    "Kosovo Online": 0.6,  # Impresum. Korrigjimet dhe anëtarësia të paverifikuara. https://www.kosovo-online.com/impresum
+    "KoSSev": 0.6,  # Profil i redaksisë. Korrigjimet dhe anëtarësia të paverifikuara. https://kossev.info/o-nama/
+    "Novosti": 0.4,  # −0.2, ≥3 raste të vitit 2019. Bonuset të paverifikuara. https://euvsdisinfo.eu/report/nato-prepares-for-a-great-conflict/
+    "Danas": 0.6,  # Bazë. Korrigjimet dhe anëtarësia të paverifikuara. https://www.danas.rs/
+    "RSE": 0.7,  # +0.1, korrigjime të RFE/RL dhe redaksi. https://docs.rferl.org/en-US/professional_code.pdf dhe https://www.slobodnaevropa.org/p/5296.html
+    "Informer": 0.4,  # −0.2, ≥2 raste, 2019. Bonuset të paverifikuara. https://euvsdisinfo.eu/report/all-countries-have-problems-but-only-russia-is-target/
 }
 E_PANJOHUR = 0.4  # çdo domen tjetër nga GDELT
 E_PLATFORME = 0.3
@@ -410,6 +412,10 @@ if __name__ == "__main__":
     assert nje < pajtim < tre and kontra < pajtim, (nje, kontra, pajtim, tre)
     assert besueshmeria_e_mediumit("Telegram:x") == besueshmeria_e_mediumit("YouTube:y") == 0.3 < E_PANJOHUR
     assert besueshmeria_e_mediumit("RTS") == MEDIAT["RTS"]
+    k6 = ("Kosovo Online", "KoSSev", "RTS", "Novosti", "Informer", "Danas", "RSE",
+          "Hibrid.info", "Policia e Kosovës", "MO Srbije")
+    assert all(.3 <= MEDIAT[m] <= .9 for m in k6)
+    assert MEDIAT["Policia e Kosovës"] == MEDIAT["MO Srbije"] == .7
     from tempfile import TemporaryDirectory
     with TemporaryDirectory() as dosja:
         _kontrollo_ripostimet(dosja)
@@ -425,6 +431,19 @@ if __name__ == "__main__":
                               "rregulla": {"auc": .80, "brier": .12}}}
         shteg.write_text(json.dumps(model), encoding="utf-8")
         assert math.isclose(vlereso_ngjarjen(e, det, lexo_modelin(shteg)), .75)
+        nenset = dict(model, **{"veçoritë": ["n_mediat"]}, mesatarja=[0],
+                      devijimi=[1], koeficientet=[math.log(3)])
+        shteg.write_text(json.dumps(nenset), encoding="utf-8")
+        assert math.isclose(vlereso_ngjarjen(e, det, lexo_modelin(shteg)), .75)
+        for bek in (dict(nenset, versioni=1),
+                    dict(nenset, **{"veçoritë": ["e_panjohur"]}),
+                    dict(nenset, **{"veçoritë": ["ka_rast_euvsdisinfo"]}),
+                    dict(nenset, **{"veçoritë": ["n_mediat", "n_mediat"]}),
+                    dict(nenset, intercepti=float("nan")),
+                    dict(nenset, **{"veçoritë": ["n_mediat", "n_kopje"]},
+                         mesatarja=[0, 0], devijimi=[1, 1], koeficientet=[1, .01])):
+            shteg.write_text(json.dumps(bek), encoding="utf-8")
+            assert lexo_modelin(shteg) is None
         model["metrikat"]["logjistik"]["brier"] = .13
         shteg.write_text(json.dumps(model), encoding="utf-8")
         assert lexo_modelin(shteg) is None
