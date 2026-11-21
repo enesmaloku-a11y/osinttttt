@@ -47,7 +47,21 @@ SHENJESTRAT_RE = {
     "infrastrukture_kritike": r"gazivod|ujman|ib[eë]r|ibar|lepenc|nënstacion|substation|trafostanic|"
                               r"\bdam\b|digë|termocentral|power plant|elektran|далековод|трафостаниц",
     "institucione": r"polic|policij|полициј|ministri|qeveri|government|vlad[ae]\b",
+    "ekonomi": r"\bbank|\bbankë|\bbanka|\bбанк",
 }
+
+# Kërcënim i drejtpërdrejtë: qëllim ("do të", "we will") + sulm, ose rekrutim për sulm.
+# "a4ack" / "att@ck" kapen si "attack", sepse fjalët e maskuara me shifra janë mënyrë e njohur
+# për t'i anashkaluar filtrat.
+SULM = r"(?:a[t4+7@]{1,2}a?c?k\w*|sulm\w*|napa[dš]\w*|напа[дш]\w*|bomb\w*|shpërth\w*|kill\w*|vra[sn]\w*)"
+QELLIM = (r"(?:we will|we'?ll|i will|they will|going to|do t[aëe]?|do t'|ćemo|ћемо|"
+          r"looking for (?:members|people)|recruit\w*|rekrut\w*|kërkojmë (?:anëtarë|njerëz)|tražimo (?:članove|ljude))")
+# Folje në vetën e parë shumës që janë vetë kërcënim ("do të sulmojmë", "napašćemo")
+VETE = r"(?:sulmojmë|bombardojmë|napašćemo|napadaćemo|udarićemo|напашћемо|нападаћемо|ударићемо)"
+KERCENIM_RE = re.compile(rf"\b{QELLIM}\b.{{0,40}}?\b{SULM}|\b{VETE}", re.I)
+# Shenjestra është vetë Kosova vetëm kur emri vjen menjëherë pas sulmit ("attack Kosovo"),
+# jo kur përmendet si vend ("attack a bank in Kosova")
+SULM_KOSOVE = re.compile(rf"(?:{SULM}|{VETE})\s+(?:\w+\s+)?(?:kosov|косов)", re.I)
 
 
 def lidhu():
@@ -157,13 +171,22 @@ def vlereso_postimin(id_, koha, teksti, burimi=MEDIUMI):
     kat, provat = kategoria_e(teksti)
     aktori = next((a for a, r in AKTORET_RE.items() if re.search(r, teksti, re.I)), "i_panjohur")
     shenjestrat = [s for s, r in SHENJESTRAT_RE.items() if re.search(r, teksti, re.I)]
+    kercenim = KERCENIM_RE.search(teksti)
+    if kercenim:
+        # Kush shpall sulm është grup që planifikon dhunë; kategoria: kërcënim konkret / rekrutim
+        provat = provat + [kercenim.group(0)]
+        kat = kat if kat != "tjeter" else "ekstremizem_terrorizem"
+        aktori = aktori if aktori != "i_panjohur" else "grupe_te_armatosura"
+        if SULM_KOSOVE.search(teksti) and "institucione" not in shenjestrat:
+            shenjestrat.append("institucione")  # sulm ndaj Kosovës = ndaj shtetit
+        shenjestrat = [s for s in kercenimet.SHENJESTRAT if s in shenjestrat]
     det = {"kategoria": kat, "aktori": aktori, "shenjestrat": shenjestrat,
            "lidhje_me_fsk": "fsk" in shenjestrat, "mediat": [burimi], "gjuhet": [gjuha(teksti)]}
     e = {"id": id_, "data": koha[:10], "vendi": teksti, "titulli": teksti, "besueshmeria": None,
          "burimet": f'["demo://{id_}"]', "lloji": None}
     r = rreziku.vlereso(e, det, sot=koha[:10])
-    siguri = kat != "tjeter" or bool(extractor.FJALE_KYCE.search(teksti))
-    return {"id": id_, "koha": koha, "teksti": teksti, "burimi": burimi, "kategoria": kat, "provat": provat,
+    siguri = kat != "tjeter" or bool(kercenim) or bool(extractor.FJALE_KYCE.search(teksti))
+    return {"kercenim": kercenim.group(0) if kercenim else None,"id": id_, "koha": koha, "teksti": teksti, "burimi": burimi, "kategoria": kat, "provat": provat,
             "aktori": aktori, "shenjestrat": shenjestrat, "vendi": gjej_vendin(teksti)[0],
             "gjuha": det["gjuhet"][0], "siguri": siguri, **r}
 
@@ -243,6 +266,8 @@ def app():
                          f"**Vendi:** {(v['vendi'] or 'i panjohur').capitalize()} · "
                          f"**Aktori:** {kercenimet.AKTORET.get(v['aktori'])} · "
                          f"**Shenjestrat:** {', '.join(kercenimet.SHENJESTRAT[s] for s in v['shenjestrat']) or '–'}")
+                if v["kercenim"]:
+                    st.warning(f"Kërcënim i drejtpërdrejtë (qëllim + sulm): \"{v['kercenim']}\"")
                 st.write(f"**Fjalët që e kapën:** {', '.join(sorted(set(v['provat'])))}")
                 st.markdown("**Pse ky rrezik:**\n" + "\n".join(f"- {x}" for x in r["arsyet"]))
                 st.write(f"**Admiralty {a['kodi']}:** {a['burimi']} = {emrat_admiralty.get(a['burimi'], '')}; "
@@ -278,6 +303,14 @@ def kontrollet():
     assert teksti_nga_update({"channel_post": {"chat": {"type": "channel"}, "photo": []}}) is None
     tg = vlereso_postimin(5, sot, "TEST: Ushtria e Serbisë po lëviz tanke drejt Jarinjës", TELEGRAM)
     assert tg["admiralty"]["kodi"] == "F6" and tg["prioriteti"] == "URGJENTE", tg["admiralty"]
+    # Kërcënimi i drejtpërdrejtë: sulm ndaj Kosovës = i lartë; sulm ndaj një banke = i mesëm;
+    # fjala e maskuar "a4ack" kapet; futbolli jo
+    for t, pritet in [("we will attack kosovo today", ("i lartë", "URGJENTE")),
+                      ("Napašćemo Kosovo večeras", ("i lartë", "URGJENTE")),
+                      ("We are looking for members to a4ack bank in kosova", ("i mesëm", "MONITORIM"))]:
+        k = vlereso_postimin(6, sot, t)
+        assert k["kercenim"] and (k["rreziku"]["niveli"], k["prioriteti"]) == pritet, (t, k["rreziku"])
+    assert not vlereso_postimin(7, sot, "We will win the match today")["kercenim"]
     # Maskimi: personat maskohen, vendet jo
     assert maskoj("Banorët në Zubin Potok dhe Filan Fisteku") == "Banorët në Zubin Potok dhe [person]"
     print("Kontrollet kaluan: 5 raste demo (en, sr-cirilik, sq, 2 pa kërcënim).")
