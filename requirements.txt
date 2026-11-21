@@ -1,6 +1,5 @@
 feedparser
 trafilatura
-gdeltdoc
 langdetect
 streamlit
 altair

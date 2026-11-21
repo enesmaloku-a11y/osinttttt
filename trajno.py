@@ -10,6 +10,9 @@ import db
 from scoring import MODELI, vlereso
 from vektori import EMRAT, vektori
 
+# Konteksti shtohet pas vlerësimit, ndaj kjo veçori mungon gjatë parashikimit.
+VECORITE = [k for k in EMRAT if k != "ka_rast_euvsdisinfo"]
+
 
 def te_dhenat():
     with closing(db.lidhu()) as lidhja:
@@ -23,7 +26,8 @@ def te_dhenat():
         if e["url_kryesor"] in pare:
             continue
         pare.add(e["url_kryesor"])
-        x.append(list(vektori(e).values()))
+        veçorite = vektori(e)
+        x.append([veçorite[k] for k in VECORITE])
         y.append(int(e["statusi"] == "e konfirmuar"))
         rregullat.append(vlereso(json.loads(e["detajet_json"] or "{}"))[0])
     return x, y, rregullat
@@ -106,10 +110,10 @@ def trajno():
     prag = next((float(t) for t in np.unique(log) if y[log >= t].mean() >= .90), None)
     modeli = dict(versioni=1, trajnuar_me=datetime.now(timezone.utc).isoformat(),
                   n=n, n_pozitive=poz, metrikat=metrikat, **trajno_logjistiken(x, y))
-    modeli["veçoritë"] = list(EMRAT)
+    modeli["veçoritë"] = VECORITE
     raport = {"metrikat": metrikat, "n": n, "n_pozitive": poz, "pragu_i_rekomanduar": prag,
               "n_mbi_prag": int((log >= prag).sum()) if prag is not None else 0,
-              "peshat": dict(zip(EMRAT, modeli["koeficientet"])),
+              "peshat": dict(zip(VECORITE, modeli["koeficientet"], strict=True)),
               "rekomandim": "Shqyrtoni pemët." if metrikat["peme"]["auc"] >= metrikat["logjistik"]["auc"] + .05
               else "Mbani regresionin logjistik."}
     ruaj(MODELI.with_name("raporti_modelit.json"), raport)
@@ -121,5 +125,6 @@ def trajno():
 
 
 if __name__ == "__main__":
+    assert "ka_rast_euvsdisinfo" not in VECORITE and set(VECORITE) < set(EMRAT)
     raise SystemExit(trajno())
 
