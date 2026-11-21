@@ -1,12 +1,14 @@
 """dashboard.py - Pamja për analistin. Sistemi vetëm ndihmon; vendimi është i analistit.
 
 Nis me:  streamlit run dashboard.py
-Skedat: Urgjente dhe Raporte (sipas prioritetit të rreziku.py), Ngjarjet (harta, kronologjia),
-Kërcënimet (taksonomia), Burimet, Vlerësimi, Artikujt, Ekzekutimi.
+Skedat: Përmbledhja (rrezik x besueshmëri, Serbia, zonat), Urgjente dhe Raporte (sipas prioritetit
+të rreziku.py), Ngjarjet (harta, kronologjia), Kërcënimet (taksonomia), Burimet, Vlerësimi,
+Artikujt, Ekzekutimi.
 """
 import json
 import sqlite3
 from collections import Counter
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import altair as alt
@@ -16,11 +18,13 @@ import streamlit as st
 from streamlit_folium import st_folium
 
 import collector
+import correlator
 import db
 import ekzekuto
 import kercenimet
 import patterns
 import raporti
+import rreziku
 import scoring
 
 DOSJA = Path(__file__).resolve().parent
@@ -63,6 +67,27 @@ SHENJA = {"URGJENTE": "🔴", "RAPORT": "🟠", "MONITORIM": "🔵", "ARKIV": "�
 NGJYRA_HARTE = {"URGJENTE": "red", "RAPORT": "orange", "MONITORIM": "blue", "ARKIV": "gray", None: "lightgray"}
 SAKTESIA = {"village": "fshat", "municipality": "komunë", "region": "vetëm rajon",
             "exact": "e saktë", "approximate": "e përafërt", None: "e panjohur"}
+# Ngjyrat e prioritetit në grafikë (të njëjtat si në hartë). Matrica s'ka "i pallogaritur":
+# ngjarjet pa rrezik të llogaritur s'vizatohen aty.
+NGJYRAT = ["red", "orange", "#3b82f6", "gray", "#cbd5e1"]
+NGJYRAT_PRIORITETIT = alt.Scale(domain=kercenimet.PRIORITETET + ["i pallogaritur"], range=NGJYRAT)
+NGJYRAT_MATRICES = alt.Scale(domain=kercenimet.PRIORITETET, range=NGJYRAT[:4])
+# Zonat e tabelës te "Përmbledhja", sipas emrave kanonikë të correlator.gjej_vendin (VENDET).
+# shortcut: "mitrovic" përfshin edhe Mitrovicën e Jugut (correlator.py s'i dallon); "veri" = veriu
+# pa komunë të njohur. Hani i Elezit është pika kufitare me Maqedoninë e Veriut.
+ZONAT = {"Veriu": {"mitrovic", "zvecan", "leposavi", "zubin potok", "veri"},
+         "Kufiri / pikat kufitare": {"jarinj", "bernjak", "banjsk", "hani i elezit"},
+         "Prishtina": {"prishtin"}}
+KOSOVA = {emrat[0] for emrat in correlator.VENDET}  # vendet e Kosovës; ato te RAJONI janë jashtë saj
+KOSOVA_TJETER, RAJONALE, PA_VEND = "Kosova tjetër", "Rajonale (jashtë Kosovës)", "Pa vend"
+# Pamjet e hartës: ([jugperëndim, verilindje], zoom-i që i nxë kufijtë në hartën 450 px të lartë).
+# Evropa është edhe kufiri ku mund të lëvizet harta. fit_bounds s'përdoret: st_folium e ndërton
+# hartën kur korniza ka ende gjerësi 0, prandaj fitBounds del gjithmonë në zoom-in minimal (4).
+PAMJET = {"Kosova": ([[41.85, 20.00], [43.27, 21.80]], 8), "Rajoni": ([[40.80, 18.40], [44.90, 23.10]], 6),
+          "Ballkani": ([[39.00, 13.00], [47.00, 30.00]], 5), "Evropa": ([[34.00, -11.00], [71.00, 40.00]], 4)}
+# Lajmet s'kanë GPS: koordinatat janë qendra e komunës ose e rajonit, prandaj vizatohet një rreth
+# sa pasiguria (metra). "village" (fshat ose vend i saktë) vizatohet si pikë.
+RREZET = {"region": 15000, "municipality": 5000}
 
 artikujt["data"] = pd.to_datetime(artikujt["data"], utc=True, errors="coerce")
 # Të gjitha domenet e GDELT bashkohen në një grup që grafiku të mbetet i lexueshëm
@@ -199,6 +224,110 @@ def kartela(e, skeda):
             st.rerun()
 
 
+# ---------------- Skeda "Përmbledhja": grafikë të thjeshtë nga baza ----------------
+def data_e(e):
+    try:
+        return datetime.strptime(str(e.get("data"))[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def grafiku_matrices(ngjarjet):
+    """Matrica rrezik x besueshmëri. Kthen (grafiku ose None, sa ngjarje s'kanë rrezik ose besueshmëri)."""
+    pikat, pa_vlera = [], 0
+    for e in ngjarjet:
+        pike, b, p = raporti.rreziku(e)[0], raporti.besueshmeria(e), raporti.prioriteti(e)
+        if pike is None or b is None or p is None:
+            pa_vlera += 1
+            continue
+        pikat.append({"titulli": raporti.rresht(e["titulli"], 120), "data": str(e["data"])[:10],
+                      "prioriteti": p, "rreziku": pike,
+                      "besueshmeria": b, "kategoria": raporti.rresht(raporti.kategoria(e), 80),
+                      "burime": len(e["burimet_l"])})
+    if not pikat:
+        return None, pa_vlera
+    # Të njëjtat fusha dhe tituj në çdo shtresë, që boshtet të mos marrin tituj të përzier
+    x = alt.X("besueshmeria:Q", title="Besueshmëria (gjasat që ngjarja të jetë e vërtetë)",
+              scale=alt.Scale(domain=[0, 1]), axis=alt.Axis(format=".0%"))
+    y = alt.Y("rreziku:Q", title="Rreziku nëse është e vërtetë (0–100)", scale=alt.Scale(domain=[0, 100]))
+    vija = {"strokeDash": [4, 4], "color": "gray", "opacity": 0.8}
+    vijat = (alt.Chart(pd.DataFrame({"rreziku": [rreziku.PRAGU_LARTE, rreziku.PRAGU_MESEM]}))
+             .mark_rule(**vija).encode(y=y)
+             + alt.Chart(pd.DataFrame({"besueshmeria": [rreziku.B_LARTE]})).mark_rule(**vija).encode(x=x))
+
+    def etiketa(teksti, b, r, rreshtimi):
+        return alt.Chart(pd.DataFrame({"besueshmeria": [b], "rreziku": [r], "t": [teksti]})).mark_text(
+            align=rreshtimi, baseline="middle", color="gray", fontSize=12).encode(x=x, y=y, text="t:N")
+    etiketat = (etiketa("URGJENTE për veprim", 0.99, 97, "right")
+                + etiketa("URGJENTE për verifikim", 0.01, 97, "left")
+                + etiketa("Raporte", 0.01, (rreziku.PRAGU_LARTE + rreziku.PRAGU_MESEM) / 2, "left")
+                + etiketa("Monitorim", 0.01, rreziku.PRAGU_MESEM / 2, "left"))
+    pika = alt.Chart(pd.DataFrame(pikat)).mark_circle(opacity=0.85).encode(
+        x=x, y=y, color=alt.Color("prioriteti:N", title="Prioriteti", scale=NGJYRAT_MATRICES),
+        size=alt.Size("burime:Q", title="Burime", scale=alt.Scale(range=[60, 400], zero=False),
+                      legend=alt.Legend(format="d", tickMinStep=1)),
+        tooltip=[alt.Tooltip("titulli:N", title="Ngjarja"), alt.Tooltip("data:N", title="Data"),
+                 alt.Tooltip("prioriteti:N", title="Prioriteti"), alt.Tooltip("rreziku:Q", title="Rreziku"),
+                 alt.Tooltip("besueshmeria:Q", title="Besueshmëria", format=".0%"),
+                 alt.Tooltip("kategoria:N", title="Kategoria")])
+    return alt.layer(vijat, etiketat, pika).properties(height=420), pa_vlera
+
+
+def paneli_serbia(aktive, te_gjitha):
+    """Ngjarjet me aktor shtetin serb: 7 ditët deri te data më e re në bazë (jo sot, që demo-ja të
+    punojë), kundrejt 7 ditëve para tyre."""
+    deri = max(filter(None, map(data_e, te_gjitha)), default=None)
+    if deri is None:
+        st.info("S'ka ende ngjarje.")
+        return
+    nga = deri - timedelta(days=6)
+    serbe = [e for e in aktive if e["det"].get("aktori") == "shteti_serb"]
+    tani = [e for e in serbe if raporti.brenda(e, nga, deri)]
+    para = [e for e in serbe if raporti.brenda(e, nga - timedelta(days=7), nga - timedelta(days=1))]
+
+    def numrat(lista):
+        pike = [p for e in lista if (p := raporti.rreziku(e)[0]) is not None]
+        urg = [e for e in lista if raporti.prioriteti(e) == "URGJENTE"]
+        return {"Ngjarje": len(lista), "URGJENTE": len(urg),
+                "Prej tyre për verifikim": sum(map(raporti.per_verifikim, urg)),
+                "Rreziku mesatar": round(sum(pike) / len(pike)) if pike else None}
+    t, p = numrat(tani), numrat(para)
+    for kolona, (emri, v) in zip(st.columns(4), t.items()):
+        delta = v - p[emri] if v is not None and p[emri] is not None else None
+        vlera = "–" if v is None else f"{v}/100" if emri == "Rreziku mesatar" else v
+        kolona.metric(emri, vlera, delta=delta, delta_color="inverse", help="Ndryshimi kundrejt 7 ditëve para")
+    kat = Counter(k for e in tani if isinstance(k := e["det"].get("kategoria"), str) and kercenimet.kategoria_valide(k))
+    st.write("**Kategoritë më të shpeshta:** "
+             + (", ".join(f"{kercenimet.emri(k)} ({n})" for k, n in kat.most_common(3)) or "s'ka ngjarje në këtë periudhë"))
+    st.caption(f"Ngjarjet me aktor shtetin serb, {nga:%d.%m}–{deri:%d.%m.%Y} (deri te ngjarja më e re në bazë), "
+               "krahasuar me 7 ditët para. Aktori vjen nga modeli; verifikoje.")
+
+
+def zona_e(e):
+    """Zona e tabelës: rajonale (jashtë Kosovës) së pari, pastaj sipas vendit të njohur."""
+    v = correlator.gjej_vendin(e.get("vendi") or "")[0]
+    if e["det"].get("rajonale") is True or (v and v not in KOSOVA):
+        return RAJONALE
+    if v is None:
+        return PA_VEND
+    return next((z for z, vendet in ZONAT.items() if v in vendet), KOSOVA_TJETER)
+
+
+def tabela_zonave(ngjarjet):
+    """Për çdo zonë: ngjarje, urgjente, raporte (RAPORT + MONITORIM) dhe kategoria më e shpeshtë."""
+    zonat = {z: {"Zona": z, "Ngjarje": 0, "Urgjente": 0, "Raporte": 0, "kat": Counter()}
+             for z in [*ZONAT, KOSOVA_TJETER, RAJONALE, PA_VEND]}
+    for e in ngjarjet:
+        z, p = zonat[zona_e(e)], raporti.prioriteti(e)
+        z["Ngjarje"] += 1
+        z["Urgjente"] += p == "URGJENTE"
+        z["Raporte"] += p in ("RAPORT", "MONITORIM")
+        z["kat"][raporti.kategoria(e)] += 1
+    return pd.DataFrame([{**{k: v for k, v in z.items() if k != "kat"},
+                          "Kategoria më e shpeshtë": z["kat"].most_common(1)[0][0] if z["kat"] else "–"}
+                         for z in zonat.values()])
+
+
 # ---------------- Përmbledhja ----------------
 st.title("OSINT Kosova: kërcënimet hibride")
 st.caption("Sistemi vetëm sugjeron. Çdo vendim e merr analisti.")
@@ -209,9 +338,39 @@ k2.metric("Raporte", len(raporte))
 k3.metric("Ngjarje", len(ngj))
 k4.metric("Artikuj", len(f))
 
-(tab_urg, tab_rap, tab_ngj, tab_ker, tab_bur, tab_vle,
- tab_art, tab_ekz) = st.tabs(["Urgjente", "Raporte", "Ngjarjet", "Kërcënimet", "Burimet",
+(tab_per, tab_urg, tab_rap, tab_ngj, tab_ker, tab_bur, tab_vle,
+ tab_art, tab_ekz) = st.tabs(["Përmbledhja", "Urgjente", "Raporte", "Ngjarjet", "Kërcënimet", "Burimet",
                               "Vlerësimi", "Artikujt", "Ekzekutimi"])
+
+# ---------------- Përmbledhja ----------------
+with tab_per:
+    st.caption("Në një shikim: sa kërcënime urgjente ka, nga kush, ku përafërsisht dhe pse. Respekton "
+               "filtrat e sidebar-it; ngjarjet e hedhura poshtë nga analisti s'numërohen.")
+    st.subheader("Rreziku × besueshmëria")
+    grafiku, pa_vlera = grafiku_matrices(aktive)
+    if grafiku is None:
+        st.info("S'ka ende ngjarje." if not aktive else
+                "Asnjë ngjarje s'ka ende rrezik dhe besueshmëri të llogaritur (shih skedën Urgjente).")
+    else:
+        st.altair_chart(grafiku, width="stretch")
+        st.caption(f"Çdo pikë është një ngjarje ({len(aktive) - pa_vlera} në grafik"
+                   + (f"; {pa_vlera} pa rrezik ose pa besueshmëri s'janë në të" if pa_vlera else "") + "). "
+                   f"Vija vertikale = besueshmëria {rreziku.B_LARTE:.0%}: djathtas URGJENTE për veprim, majtas "
+                   f"për verifikim. Vijat horizontale = pragjet e rrezikut {rreziku.PRAGU_LARTE} (i lartë) dhe "
+                   f"{rreziku.PRAGU_MESEM} (i mesëm). Ngjyra = prioriteti i llogaritur nga rreziku.py: me "
+                   "besueshmëri nën 50% rreziku i mesëm bie te MONITORIM, rreziku i ulët me besueshmëri nën 80% "
+                   "te ARKIV, dhe një ngjarje e konfirmuar nga analisti është për veprim edhe majtas vijës. "
+                   "Madhësia = numri i burimeve.")
+    st.subheader("Serbia: ngjarjet me aktor shtetin serb")
+    paneli_serbia(aktive, te_gjitha)
+    st.subheader("Ku: ngjarjet sipas zonës")
+    if aktive:
+        st.dataframe(tabela_zonave(aktive), hide_index=True, width="stretch")
+        st.caption("Zona vjen nga vendi i njohur i ngjarjes (correlator.py). Veriu: Mitrovicë, Zveçan, "
+                   "Leposaviq, Zubin Potok, 'veriu'. Kufiri: Jarinjë, Bërnjak, Banjskë, Hani i Elezit. "
+                   "Raporte = RAPORT + MONITORIM, si te skeda Raporte.")
+    else:
+        st.info("S'ka ende ngjarje.")
 
 # ---------------- Urgjente ----------------
 with tab_urg:
@@ -259,7 +418,10 @@ with tab_ngj:
     elif not alarmet:
         st.caption("S'ka rritje të pazakonta (rregulli: ≥ 3 ngjarje në 7 ditë dhe ≥ 2x mesatarja javore).")
 
-    harta = folium.Map(location=[42.8, 20.9], zoom_start=7)  # Kosova dhe vendet fqinje
+    pamja = st.radio("Pamja e hartës", list(PAMJET), horizontal=True, key="pamja_harte")
+    (lat_jug, lon_per), (lat_veri, lon_lin) = PAMJET["Evropa"][0]
+    harta = folium.Map(location=[42.56, 20.90], zoom_start=8, min_zoom=4, max_bounds=True,
+                       min_lat=lat_jug, max_lat=lat_veri, min_lon=lon_per, max_lon=lon_lin)
     for e in ngj:
         if e.get("lat") is None or e.get("lon") is None:
             continue
@@ -272,17 +434,24 @@ with tab_ngj:
                  f"<br>Vendimi: {siguro(e['statusi'])}")
         tooltip = siguro(raporti.rresht(e["titulli"], 100))
         ngjyra = NGJYRA_HARTE.get(p, "lightgray")
-        if sv == "region":
-            # Vend i përafërt: rreth i madh në vend të pikës, që të mos duket më i saktë se ç'është
-            folium.Circle([e["lat"], e["lon"]], radius=15000, color=ngjyra, fill=True,
+        # Pa saktësi të dhënë, koordinatat vijnë nga lista e komunave: trajtohen si komunë
+        rreze = RREZET.get(sv or "municipality")
+        if rreze:
+            # Vend i përafërt: rreth sa pasiguria, që të mos duket më i saktë se ç'është
+            folium.Circle([e["lat"], e["lon"]], radius=rreze, color=ngjyra, fill=True,
                           fill_opacity=0.15, tooltip=tooltip, popup=popup).add_to(harta)
-        else:
+        if not rreze or det.get("rajonale"):
             ikona = folium.Icon(color=ngjyra, icon="globe" if det.get("rajonale") else "info-sign")
             folium.Marker([e["lat"], e["lon"]], tooltip=tooltip, popup=popup, icon=ikona).add_to(harta)
-    st.caption("Ngjyra: e kuqe URGJENTE, portokalli RAPORT, blu MONITORIM, gri ARKIV. Globi = ngjarje "
-               "rajonale (jashtë Kosovës). Rrethi = vendi dihet vetëm në nivel rajoni. Ngjarjet pa vend të "
-               "njohur nuk dalin në hartë, por janë në listë.")
-    st_folium(harta, height=450, use_container_width=True, returned_objects=[])
+    st.caption("Ngjyra: e kuqe URGJENTE, portokalli RAPORT, blu MONITORIM, gri ARKIV. Lajmet s'kanë GPS, "
+               "prandaj vendi tregohet me saktësinë që dihet: rreth ~15 km = vetëm rajoni, rreth ~5 km = "
+               "komuna (qendra e saj), pikë = fshat ose vend i saktë. Globi = ngjarje rajonale (jashtë "
+               "Kosovës). Ngjarjet pa vend të njohur nuk dalin në hartë, por janë në listë. Harta kërkon "
+               "internet (pa të nuk shfaqet; kronologjia dhe lista punojnë).")
+    # Qendra dhe zoom-i i jepen st_folium-it: kalimi mes pamjeve s'e ringarkon hartën
+    (jug, per), (veri, lin) = PAMJET[pamja][0]
+    st_folium(harta, height=450, use_container_width=True, returned_objects=[],
+              center=[(jug + veri) / 2, (per + lin) / 2], zoom=PAMJET[pamja][1])
 
     if not ngj:
         st.info("Ende s'ka ngjarje (ose filtrat i fshehin të gjitha).")
@@ -298,7 +467,6 @@ with tab_ngj:
         } for e in ngj])
         k["dita"] = pd.to_datetime(k["dita"], errors="coerce")
         k = k.dropna(subset=["dita"])
-        domena = kercenimet.PRIORITETET + ["i pallogaritur"]
         grafiku = alt.Chart(k).mark_circle(opacity=0.8).encode(
             # ngjarjet kanë vetëm datë (pa orë), ndaj boshti tregon ditë
             x=alt.X("dita:T", title="Data", axis=alt.Axis(format="%d %b", tickCount="day"),
@@ -306,8 +474,7 @@ with tab_ngj:
             y=alt.Y("kategoria:N", title="Kategoria", axis=alt.Axis(labelLimit=250)),
             size=alt.Size("burime:Q", title="Burime", scale=alt.Scale(range=[80, 500], zero=False),
                           legend=alt.Legend(format="d", tickMinStep=1)),
-            color=alt.Color("prioriteti:N", title="Prioriteti",
-                            scale=alt.Scale(domain=domena, range=["red", "orange", "#3b82f6", "gray", "#cbd5e1"])),
+            color=alt.Color("prioriteti:N", title="Prioriteti", scale=NGJYRAT_PRIORITETIT),
             tooltip=[alt.Tooltip("dita:T", title="Data"), alt.Tooltip("titulli:N", title="Ngjarja"),
                      alt.Tooltip("prioriteti:N", title="Prioriteti"), alt.Tooltip("rreziku:Q", title="Rreziku"),
                      alt.Tooltip("besueshmeria:N", title="Besueshmëria"), alt.Tooltip("burime:Q", title="Burime")],
