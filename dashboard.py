@@ -169,14 +169,19 @@ if CLOUD:
     st.sidebar.info("Demo në cloud: ekzekutimi dhe orari punojnë vetëm në laptopin me Ollama.")
 elif ngrire:
     st.sidebar.warning("Etiketim në vazhdim: pipeline-i është i ngrirë. Ekzekutimi dhe orari janë çaktivizuar.")
-if st.sidebar.button("Ekzekuto tani", type="primary", key="ekz_sidebar", use_container_width=True,
-                     disabled=ngrire):
+if st.sidebar.button("Mblidh lajmet tani", type="primary", key="ekz_sidebar", use_container_width=True,
+                     disabled=ngrire, help="Mbledh nga mediat RSS dhe GDELT, pastaj përkthen dhe analizon "
+                                           "deri në 20 artikuj me modelin lokal (rreth 20–25 minuta)."):
     if ekzekuto.po_punon():
-        st.sidebar.warning("Një ekzekutim po punon tashmë.")
+        st.sidebar.warning("Një mbledhje po punon tashmë.")
     else:
         ekzekuto.nis_ne_sfond(20)
-        st.sidebar.success("U nis në sfond (20 artikuj).")
-st.sidebar.caption("Po punon tani…" if ekzekuto.po_punon() else
+        st.sidebar.success("Mbledhja u nis në sfond. Ecuria: skeda 'Ekzekutimi'.")
+# Rifreskimi lexon sërish bazën (pa cache), që ngjarjet e reja të duken pa pritur 60 sekonda
+if st.sidebar.button("Rifresko pamjen", key="rifresko_sidebar", use_container_width=True):
+    st.cache_data.clear()
+    st.rerun()
+st.sidebar.caption("Mbledhja po punon tani…" if ekzekuto.po_punon() else
                    "Orari dhe log-u: skeda 'Ekzekutimi'.")
 
 st.sidebar.header("Filtrat e ngjarjeve")
