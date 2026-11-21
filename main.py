@@ -50,6 +50,7 @@ def main(n):
 
     print("1/7 Mbledhja e artikujve...")
     te_reja = sum(collector.mblidh_te_gjitha().values())
+    te_reja += opsional("apify_burimi", "mblidh") or 0  # Reddit përmes Apify; pa çelës anashkalohet
 
     print(f"\n2/7 Përkthimi në anglisht (deri në {n} artikuj)...")
     perkthyer, gabime_p = processor.perpuno(n)
