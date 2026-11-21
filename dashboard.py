@@ -34,31 +34,48 @@ DOSJA = Path(__file__).resolve().parent
 REZULTATI = DOSJA / "eval" / "rezultati.json"          # nga eval/evaluate.py
 RAPORTI_MODELIT = DOSJA / "data" / "raporti_modelit.json"  # nga trajno.py
 
-st.set_page_config(page_title="OSINT Kosova", layout="wide")
+st.set_page_config(page_title="OSINT Kosova", layout="wide", initial_sidebar_state="collapsed")
 # Vetëm stil (pa të dhëna brenda), ndaj unsafe_allow_html këtu s'hap rrugë për HTML nga lajmet
 st.markdown("""<style>
-html, body, [class*="css"] { font-family: "Segoe UI", "IBM Plex Sans", system-ui, sans-serif; }
-h3 { text-transform: uppercase; letter-spacing: .08em; font-size: .9rem !important; color: #aab2bd;
-     border-bottom: 1px solid #2c323a; padding-bottom: .35rem; margin-top: 1.2rem; }
-.klasifikimi { border: 1px solid #2f4a2f; color: #9bc59b; text-align: center; font-size: .72rem;
-               letter-spacing: .22em; padding: .2rem; margin-bottom: .9rem; }
-.koka { display: flex; justify-content: space-between; align-items: baseline;
-        border-bottom: 2px solid #b03a2e; padding-bottom: .45rem; margin-bottom: 1rem; }
-.koka .emri { font-size: 1.7rem; font-weight: 700; letter-spacing: .12em; }
-.koka .info { color: #8b949e; font-size: .85rem; text-align: right; }
-.pllakat { display: grid; grid-template-columns: repeat(5, 1fr); gap: .75rem; }
-.pllaka { border: 1px solid #2c323a; border-top: 3px solid var(--c); padding: .55rem .8rem; }
-.pllaka .v { font-size: 2rem; font-weight: 600; line-height: 1.15; }
-.pllaka .t { color: #8b949e; font-size: .72rem; text-transform: uppercase; letter-spacing: .1em; }
-.bluf { border-left: 3px solid #b03a2e; padding: .55rem .9rem; margin: .9rem 0 .4rem; }
-.bluf .t { color: #8b949e; letter-spacing: .1em; font-size: .72rem; text-transform: uppercase; }
-.seksion { color: #8b949e; font-size: .72rem; letter-spacing: .12em; text-transform: uppercase;
-           border-bottom: 1px solid #2c323a; padding-bottom: .2rem; margin: .9rem 0 .4rem; }
-button[role="tab"] p { font-size: .82rem; letter-spacing: .06em; text-transform: uppercase; }
-[data-testid="stSidebar"] h2 { font-size: .8rem !important; letter-spacing: .12em; text-transform: uppercase;
-                               color: #8b949e; }
-[data-testid="stExpander"] summary p { font-size: .92rem; }
+:root { --bg2: #111c30; --vija: #22304d; --zbehte: #8796ad; --theks: #d9a23b; }
+html, body, [class*="css"] { font-family: "Segoe UI", "Inter", system-ui, sans-serif; }
+[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] { display: none; }
+.block-container { padding-top: 4rem; max-width: 1500px; }
+h3 { font-size: .8rem !important; letter-spacing: .14em; text-transform: uppercase; color: var(--zbehte);
+     border-left: 3px solid var(--theks); padding: .05rem 0 .05rem .55rem; margin: 1.1rem 0 .6rem; }
+.klasifikimi { background: var(--theks); color: #0a1222; text-align: center; font-size: .7rem; font-weight: 700;
+               letter-spacing: .3em; padding: .18rem; border-radius: 2px; margin-bottom: .8rem; }
+.shiriti { display: flex; justify-content: space-between; align-items: center; background: var(--bg2);
+           border: 1px solid var(--vija); border-radius: 6px; padding: .7rem 1.1rem; margin-bottom: .8rem; }
+.shiriti .emri { font-size: 1.35rem; font-weight: 700; letter-spacing: .18em; }
+.shiriti .emri span { color: var(--theks); }
+.shiriti .nen { color: var(--zbehte); font-size: .78rem; letter-spacing: .04em; margin-top: .1rem; }
+.shiriti .gjendja { text-align: right; font-size: .78rem; color: var(--zbehte); line-height: 1.5; }
+.pika { display: inline-block; width: .55rem; height: .55rem; border-radius: 50%; margin-right: .35rem;
+        background: var(--c); box-shadow: 0 0 6px var(--c); }
+.status { display: grid; gap: .55rem; }
+.pllaka { display: flex; justify-content: space-between; align-items: center; background: var(--bg2);
+          border: 1px solid var(--vija); border-left: 4px solid var(--c); border-radius: 6px; padding: .55rem .9rem; }
+.pllaka .t { color: var(--zbehte); font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; }
+.pllaka .v { font-size: 1.75rem; font-weight: 700; color: var(--c); }
+.bluf { background: var(--bg2); border: 1px solid var(--vija); border-radius: 6px; padding: .7rem .9rem;
+        margin-top: .55rem; font-size: .9rem; line-height: 1.45; }
+.bluf .t { color: var(--theks); font-size: .7rem; letter-spacing: .14em; text-transform: uppercase;
+           margin-bottom: .25rem; font-weight: 600; }
+.seksion { color: var(--theks); font-size: .7rem; letter-spacing: .14em; text-transform: uppercase;
+           font-weight: 600; margin: .9rem 0 .35rem; }
+[role="tablist"] { gap: .35rem; border-bottom: 1px solid var(--vija); }
+[role="tab"] { background: var(--bg2); border: 1px solid var(--vija) !important; border-bottom: none !important;
+                     border-radius: 6px 6px 0 0; padding: .35rem .9rem !important; }
+[role="tab"][aria-selected="true"] { background: var(--theks); }
+[role="tab"][aria-selected="true"] p { color: #0a1222 !important; font-weight: 700; }
+[role="tab"] p { font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; }
+[data-testid="stExpander"] details { background: var(--bg2); border: 1px solid var(--vija); border-radius: 6px; }
+[data-testid="stMetricValue"] { color: var(--theks); }
 </style>""", unsafe_allow_html=True)
+# Koka dhe paneli i komandës zënë vendin lart; mbushen më poshtë, pasi të llogariten numrat
+VENDI_KOKES = st.container()
+KOMANDA = st.expander("Komanda: mbledhja dhe filtrat", expanded=False)
 
 # Cloud (Streamlit Cloud është Linux, pa Ollama): vetëm demo me të dhëna sintetike, pa nisje të
 # pipeline-it. OSINT_CLOUD=1 e provon këtë mënyrë edhe në Windows.
@@ -120,7 +137,7 @@ SAKTESIA = {"village": "fshat", "municipality": "komunë", "region": "vetëm raj
             "exact": "e saktë", "approximate": "e përafërt", None: "e panjohur"}
 # Ngjyrat e prioritetit në grafikë (të njëjtat si në hartë). Matrica s'ka "i pallogaritur":
 # ngjarjet pa rrezik të llogaritur s'vizatohen aty.
-NGJYRAT = ["#b03a2e", "#c47f1c", "#3f6f9f", "#7d8590", "#c9ced6"]  # urgjente, raport, monitorim, arkiv, pa
+NGJYRAT = ["#e5484d", "#e8a33d", "#4c9aff", "#6b7a90", "#3a4660"]  # urgjente, raport, monitorim, arkiv, pa
 NGJYRA_HEX = dict(zip(kercenimet.PRIORITETET, NGJYRAT))  # rrathët e hartës, si te grafikët
 NGJYRAT_PRIORITETIT = alt.Scale(domain=kercenimet.PRIORITETET + ["i pallogaritur"], range=NGJYRAT)
 NGJYRAT_MATRICES = alt.Scale(domain=kercenimet.PRIORITETET, range=NGJYRAT[:4])
@@ -160,42 +177,41 @@ artikujt["data"] = pd.to_datetime(artikujt["data"], utc=True, errors="coerce")
 # Të gjitha domenet e GDELT bashkohen në një grup që grafiku të mbetet i lexueshëm
 artikujt["grupi"] = artikujt["burimi"].where(~artikujt["burimi"].str.startswith("GDELT:"), "GDELT")
 
-# ---------------- Sidebar ----------------
-# Butoni kryesor në krye të sidebar-it, që të duket gjithmonë (edhe në ekran të vogël)
-st.sidebar.header("Pipeline-i")
-# Gjatë etiketimit (pipeline.ngrire ose OSINT_NGRIRE=1) asgjë s'nis pipeline-in nga dashboard-i
-ngrire = raporti.ngrire() or CLOUD
-if CLOUD:
-    st.sidebar.info("Demo në cloud: ekzekutimi dhe orari punojnë vetëm në laptopin me Ollama.")
-elif ngrire:
-    st.sidebar.warning("Etiketim në vazhdim: pipeline-i është i ngrirë. Ekzekutimi dhe orari janë çaktivizuar.")
-if st.sidebar.button("Mblidh lajmet tani", type="primary", key="ekz_sidebar", use_container_width=True,
-                     disabled=ngrire, help="Mbledh nga mediat RSS dhe GDELT, pastaj përkthen dhe analizon "
-                                           "deri në 20 artikuj me modelin lokal (rreth 20–25 minuta)."):
-    if ekzekuto.po_punon():
-        st.sidebar.warning("Një mbledhje po punon tashmë.")
-    else:
-        ekzekuto.nis_ne_sfond(20)
-        st.sidebar.success("Mbledhja u nis në sfond. Ecuria: skeda 'Ekzekutimi'.")
-# Rifreskimi lexon sërish bazën (pa cache), që ngjarjet e reja të duken pa pritur 60 sekonda
-if st.sidebar.button("Rifresko pamjen", key="rifresko_sidebar", use_container_width=True):
-    st.cache_data.clear()
-    st.rerun()
-st.sidebar.caption("Mbledhja po punon tani…" if ekzekuto.po_punon() else
-                   "Orari dhe log-u: skeda 'Ekzekutimi'.")
-
-st.sidebar.header("Filtrat e ngjarjeve")
-zona = st.sidebar.radio("Zona", ["Të gjitha", "Kosovë", "Rajonale"], horizontal=True)
-prioritetet = st.sidebar.multiselect("Prioriteti", kercenimet.PRIORITETET)
-kategorite = st.sidebar.multiselect("Kategoria", list(kercenimet.KATEGORITE), format_func=kercenimet.emri)
-nivelet = st.sidebar.multiselect("Niveli i rrezikut", kercenimet.NIVELET)
-statuset = st.sidebar.multiselect("Vendimi i analistit", db.STATUSET)
-
-st.sidebar.header("Filtrat e artikujve")
-burimet = st.sidebar.multiselect("Burimi", sorted(artikujt["grupi"].unique()))
-gjuhet = st.sidebar.multiselect("Gjuha", sorted(artikujt["gjuha"].unique()))
-kerko = st.sidebar.text_input("Kërko në titull/tekst")
-
+# ---------------- Komanda: mbledhja dhe filtrat (lart, në vend të sidebar-it) ----------------
+ngrire = raporti.ngrire() or CLOUD  # gjatë etiketimit ose në cloud asgjë s'nis pipeline-in
+k_mbl, k_ngj, k_art = KOMANDA.columns([1, 2, 2])
+with k_mbl:
+    seksion_kmd = '<div class="seksion">{}</div>'
+    st.markdown(seksion_kmd.format("Mbledhja"), unsafe_allow_html=True)
+    if CLOUD:
+        st.info("Demo në cloud: mbledhja punon vetëm në laptopin me Ollama.")
+    elif ngrire:
+        st.warning("Etiketim në vazhdim: mbledhja është e ngrirë.")
+    if st.button("Mblidh lajmet tani", type="primary", key="ekz_sidebar", use_container_width=True,
+                 disabled=ngrire, help="Mbledh nga mediat RSS dhe GDELT, pastaj përkthen dhe analizon "
+                                       "deri në 20 artikuj me modelin lokal (rreth 20–25 minuta)."):
+        if ekzekuto.po_punon():
+            st.warning("Një mbledhje po punon tashmë.")
+        else:
+            ekzekuto.nis_ne_sfond(20)
+            st.success("Mbledhja u nis në sfond. Ecuria: skeda 'Ekzekutimi'.")
+    # Rifreskimi lexon sërish bazën (pa cache), që ngjarjet e reja të duken pa pritur 60 sekonda
+    if st.button("Rifresko pamjen", key="rifresko_sidebar", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+with k_ngj:
+    st.markdown(seksion_kmd.format("Filtrat e ngjarjeve"), unsafe_allow_html=True)
+    zona = st.radio("Zona", ["Të gjitha", "Kosovë", "Rajonale"], horizontal=True)
+    a, b_ = st.columns(2)
+    prioritetet = a.multiselect("Prioriteti", kercenimet.PRIORITETET)
+    nivelet = b_.multiselect("Niveli i rrezikut", kercenimet.NIVELET)
+    kategorite = a.multiselect("Kategoria", list(kercenimet.KATEGORITE), format_func=kercenimet.emri)
+    statuset = b_.multiselect("Vendimi i analistit", db.STATUSET)
+with k_art:
+    st.markdown(seksion_kmd.format("Filtrat e artikujve"), unsafe_allow_html=True)
+    burimet = st.multiselect("Burimi", sorted(artikujt["grupi"].unique()))
+    gjuhet = st.multiselect("Gjuha", sorted(artikujt["gjuha"].unique()))
+    kerko = st.text_input("Kërko në titull/tekst")
 
 def kalon_filtrat(e):
     rajonale = e["det"].get("rajonale") is True
@@ -485,19 +501,19 @@ def harta_e(ngjarjet):
 # ---------------- Përmbledhja ----------------
 # Çdo e dhënë nga baza kalon nga html.escape para se të hyjë në HTML
 perditesuar = html.escape(str(artikujt["mbledhur_me"].max() or "–")[:16])
-st.markdown(f"""<div class="klasifikimi">E PAKLASIFIKUAR · VETËM BURIME TË HAPURA (OSINT)</div>
-<div class="koka"><div class="emri">OSINT KOSOVA</div>
-<div class="info">Kërcënimet hibride ndaj FSK-së dhe sigurisë së Kosovës<br>
-Mbledhja e fundit: {perditesuar} UTC · Sistemi sugjeron, analisti vendos</div></div>""", unsafe_allow_html=True)
+punon = ekzekuto.po_punon()
+gjendja = ("MBLEDHJA PO PUNON", NGJYRAT[1]) if punon else ("E NGRIRË", NGJYRAT[3]) if ngrire else ("GATI", "#3ecf8e")
+VENDI_KOKES.markdown(f"""<div class="klasifikimi">E PAKLASIFIKUAR · VETËM BURIME TË HAPURA (OSINT)</div>
+<div class="shiriti"><div><div class="emri">OSINT <span>KOSOVA</span></div>
+<div class="nen">Qendra e situatës · kërcënimet hibride ndaj FSK-së dhe sigurisë së Kosovës</div></div>
+<div class="gjendja"><span class="pika" style="--c:{gjendja[1]}"></span>{gjendja[0]}<br>
+Mbledhja e fundit: {perditesuar} UTC<br>Sistemi sugjeron · analisti vendos</div></div>""", unsafe_allow_html=True)
 
 per_verif = sum(map(raporti.per_verifikim, urgjente))
 pllakat = [("Urgjente", len(urgjente), NGJYRAT[0]), ("Për verifikim", per_verif, NGJYRAT[1]),
            ("Raporte", sum(raporti.prioriteti(e) == "RAPORT" for e in aktive), NGJYRAT[1]),
            ("Në monitorim", sum(raporti.prioriteti(e) == "MONITORIM" for e in aktive), NGJYRAT[2]),
            ("Artikuj", len(f), NGJYRAT[3])]
-st.markdown('<div class="pllakat">' + "".join(
-    f'<div class="pllaka" style="--c:{c}"><div class="t">{t}</div><div class="v">{int(v)}</div></div>'
-    for t, v, c in pllakat) + "</div>", unsafe_allow_html=True)
 # BLUF: një fjali për atë që ka më shumë rëndësi tani
 if urgjente:
     e0 = urgjente[0]
@@ -506,8 +522,16 @@ if urgjente:
             f"besueshmëria {perqind(raporti.besueshmeria(e0))})")
 else:
     bluf = "S'ka ngjarje urgjente me këto filtra."
-st.markdown(f'<div class="bluf"><div class="t">Më e rëndësishmja tani</div>{html.escape(bluf)}</div>',
-            unsafe_allow_html=True)
+
+
+def kolona_e_statusit():
+    """Pllakat vertikale dhe BLUF-i: niveli 1 dhe 2 i vetëdijes për situatën."""
+    st.markdown('<div class="status">' + "".join(
+        f'<div class="pllaka" style="--c:{c}"><div class="t">{t}</div><div class="v">{int(v)}</div></div>'
+        for t, v, c in pllakat) + "</div>", unsafe_allow_html=True)
+    st.markdown(f'<div class="bluf"><div class="t">Më e rëndësishmja tani</div>{html.escape(bluf)}</div>',
+                unsafe_allow_html=True)
+
 
 (tab_per, tab_urg, tab_rap, tab_ngj, tab_ker, tab_bur, tab_vle,
  tab_art, tab_ekz) = st.tabs(["Përmbledhja", "Urgjente", "Raporte", "Ngjarjet", "Kërcënimet", "Burimet",
@@ -515,23 +539,22 @@ st.markdown(f'<div class="bluf"><div class="t">Më e rëndësishmja tani</div>{h
 
 # ---------------- Përmbledhja ----------------
 with tab_per:
-    st.caption("Në një shikim: sa kërcënime urgjente ka, nga kush, ku përafërsisht dhe pse. Respekton "
-               "filtrat e sidebar-it; ngjarjet e hedhura poshtë nga analisti s'numërohen.")
-    majtas, djathtas = st.columns([3, 2])
-    with majtas:
+    statusi_k, harta_k = st.columns([1, 3])
+    with statusi_k:
+        st.subheader("Gjendja")
+        kolona_e_statusit()
+    with harta_k:
         st.subheader("Harta e situatës")
         (jug, per), (veri, lin) = PAMJET["Kosova"][0]
-        st_folium(harta_e(aktive), height=420, use_container_width=True, returned_objects=[], key="harta_per",
+        st_folium(harta_e(aktive), height=520, use_container_width=True, returned_objects=[], key="harta_per",
                   center=[(jug + veri) / 2, (per + lin) / 2], zoom=PAMJET["Kosova"][1])
-    with djathtas:
-        st.subheader("Ngjarjet më të reja")
-        if aktive:
-            st.dataframe(ngjarjet_e_fundit(aktive).style.map(
-                             lambda v: f"color: {NGJYRA_HEX.get(v, NGJYRAT[4])}; font-weight: 600",
-                             subset=["Prioriteti"]), hide_index=True, width="stretch", height=420,
-                         column_order=["Prioriteti", "Data dhe ora", "Ngjarja"])
-        else:
-            st.info("S'ka ende ngjarje.")
+    st.subheader("Ngjarjet më të reja")
+    if aktive:
+        st.dataframe(ngjarjet_e_fundit(aktive).style.map(
+                         lambda v: f"color: {NGJYRA_HEX.get(v, NGJYRAT[4])}; font-weight: 700",
+                         subset=["Prioriteti"]), hide_index=True, width="stretch")
+    else:
+        st.info("S'ka ende ngjarje.")
     majtas, djathtas = st.columns([3, 2])
     with majtas:
         st.subheader("Rreziku × besueshmëria")
