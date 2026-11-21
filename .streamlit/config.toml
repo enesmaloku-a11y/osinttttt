@@ -1,4 +1,7 @@
 # Tema e dashboard-it (lexohet kur niset "streamlit run dashboard.py" nga kjo dosje)
 [theme]
 base = "dark"
-primaryColor = "#c62828"
+primaryColor = "#d9a23b"            # qelibar: theksi i ndërfaqes
+backgroundColor = "#0a1222"         # blu shumë e errët
+secondaryBackgroundColor = "#111c30"
+textColor = "#d6e0ee"

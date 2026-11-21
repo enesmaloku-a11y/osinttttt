@@ -43,7 +43,7 @@ KONTROLLET = [
                                    "from streamlit.testing.v1 import AppTest; "
                                    "at = AppTest.from_file('dashboard.py', default_timeout=120).run(); "
                                    "assert not at.exception, [x.value for x in at.exception]; "
-                                   "b = [x for x in at.button if 'Ekzekuto' in x.label or 'orarin' in x.label]; "
+                                   "b = [x for x in at.button if any(f in x.label for f in ('Ekzekuto', 'Mblidh lajmet', 'orarin'))]; "
                                    "assert len(b) == 3 and all(x.disabled for x in b), [(x.label, x.disabled) for x in b]; "
                                    "n = sqlite3.connect('demo.db').execute('SELECT COUNT(*) FROM articles').fetchone()[0]; "
                                    "assert n > 0 and len(at.expander) > 0, (n, len(at.expander))"]),
