@@ -18,6 +18,10 @@ import feedparser
 import db
 
 KYCI_GJUHES = Lock()  # inicializimi i detektorit përdor gjendje të përbashkët
+KYCI_HOSTEVE = {}
+KOHA_HOSTEVE = {}
+HOST_DELAY = 1.0
+MIN_TEKST = 200
 
 # Burimet RSS (URL-të u verifikuan më 2026-11-19)
 FEEDS = {
@@ -73,6 +77,8 @@ def _regex_ushtarak_dron():
         import kercenimet
         fjalet = {f for k in ("ushtarak_serbia", "dron_hapesire_ajrore")
                   for ls in kercenimet.KATEGORITE[k]["fjale_kyce"].values() for f in ls}
+        # Forma cirilike e pajisjeve e kërkuar për mbulimin shumëgjuhësh.
+        fjalet.update(("ФК-3", "ХК-22", "Панцир", "МиГ-29"))
         return re.compile(r"\b(?:" + "|".join(map(re.escape, sorted(fjalet, key=len, reverse=True))) + ")", re.I)
     except Exception:
         return None
@@ -80,6 +86,9 @@ def _regex_ushtarak_dron():
 
 def ka_lidhje(burimi, titulli, permbledhja=""):
     info = BURIMET_INFO.get(burimi)
+    if info is None and burimi == "MO Srbije":
+        # Filtër i gatshëm për burimin zyrtar, por pa feed të verifikuar aktiv.
+        info = dict(gjuha="sr", lloji="zyrtar", vendi="RS")
     if info is None:
         return True
     tekst = f"{titulli or ''} {pastro_html(permbledhja or '')}".strip()
@@ -206,10 +215,12 @@ def _lejohet_nga_robots(url):
     return r is not None and r.can_fetch(AGENT, url)
 
 
-def shkarko(url, domeni=None, maks=3_000_000):
+def shkarko(url, domeni=None, maks=3_000_000, me_content_type=False):
     if not lejohet(url, domeni):
-        return None
-    return _shkarko(url, domeni or hosti(url), maks, _lejohet_nga_robots)[1]
+        return (None, None, None) if me_content_type else None
+    status, body, content_type = _shkarko(url, domeni or hosti(url), maks,
+                                         _lejohet_nga_robots, me_content_type=True)
+    return (status, body, content_type) if me_content_type else body
 
 
 def domeni_i_lejuar(url):
@@ -256,11 +267,17 @@ def nxirr_tekstin(url, domeni=None):
         domeni = domeni or domeni_i_lejuar(url)
         if not domeni:
             return ""
+        kyci = KYCI_HOSTEVE.setdefault(domeni, Lock())
+        with kyci:
+            prit = HOST_DELAY - (time.monotonic() - KOHA_HOSTEVE.get(domeni, 0))
+            if prit > 0:
+                time.sleep(prit)
+            KOHA_HOSTEVE[domeni] = time.monotonic()
         html = shkarko(url, domeni)
         if html:
             import trafilatura
             teksti = trafilatura.extract(html, include_comments=False) or ""
-            if len(teksti) >= 200:
+            if len(teksti) >= MIN_TEKST:
                 return teksti
     except Exception:
         pass
@@ -470,8 +487,11 @@ def mblidh_te_gjitha():
 
 
 def kontrollo():
+    global _shkarko
     import scoring
     import inspect
+    import contextlib
+    import io
 
     for s in ("Kosovo", "Косово", "Космет", "Metohija", "Zubin Potok", "Jarinje", "Јариње",
               "KFOR", "FSK", "Mitrovica", "Приштина", "Leposavić"):
@@ -484,6 +504,16 @@ def kontrollo():
     assert ka_lidhje("Policia e Kosovës", "Policia sekuestron armë pranë Jarinjës")
     assert ka_lidhje("Hibrid.info", "Lajm i rremë për FSK-në")
     assert ka_lidhje("RTS", "Lajm i rremë për FSK-në")
+    assert ka_lidhje("Kosovo Online", "Dron nadleteo branu Gazivode na Kosovu")
+    assert not ka_lidhje("RTS", "Војска Србије подигла борбену готовост код Рашке")
+    mo_tituj = ("Исporučen kineski sistem FK-3 Vojsci Srbije",
+                "Isporučen kineski sistem FK-3 Vojsci Srbije",
+                "Испоручен кинески систем ФК-3 Војсци Србије")
+    assert all(ka_lidhje("MO Srbije", t) for t in mo_tituj)
+    assert all(not ka_lidhje("RTS", t) for t in mo_tituj)
+    assert ka_lidhje("Hibrid.info", "Lajm i rremë për FSK-në")
+    assert ka_lidhje("KoSSev", "ransomware attack on servers")
+    assert ka_lidhje("burim i vjetër", "tekst pa filtër")
     assert ka_lidhje("RTS", "protest u Beogradu") is False
     assert ka_lidhje("RTS", "") is False and ka_lidhje("Koha", "") is True
     assert url_normalizuar("https://a.test/x/?utm_source=a&fbclid=z#f") == "https://a.test/x"
@@ -506,6 +536,21 @@ def kontrollo():
     assert not re.search(r"kosov|kosmet|косов", kerkesat_gdelt(0)[0][1], re.I)
     assert len(inspect.signature(verifiko).parameters) == 3
     assert len(kerkesat_gdelt(0)) == 6
+    dl, sleep = _shkarko, time.sleep
+    try:
+        _shkarko = lambda *a, **kw: (429, None, "text/html")
+        time.sleep = lambda *_: None
+        dalje = io.StringIO()
+        with contextlib.redirect_stdout(dalje):
+            assert mblidh_gdelt(0) == 0
+        assert "6 të dështuara" in dalje.getvalue(), dalje.getvalue()
+        _shkarko = lambda *a, **kw: (200, b"<html>proxy error</html>", "text/html")
+        dalje = io.StringIO()
+        with contextlib.redirect_stdout(dalje):
+            assert mblidh_gdelt(0) == 0
+        assert "6 të dështuara" in dalje.getvalue() and "jo-JSON" in dalje.getvalue()
+    finally:
+        _shkarko, time.sleep = dl, sleep
     print("Kontrollet e mbledhjes kaluan.")
 
 
