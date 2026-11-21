@@ -5,9 +5,6 @@ __pycache__/
 *.db
 # Të dhënat e jashtme të kontekst_dezinformim.py (eksporti i EUvsDisinfo): mos i publiko
 data/
-# Konfigurimi i mjeteve lokale (Claude Code): mbetet vetëm në këtë kompjuter
-CLAUDE.md
-.claude/
 # Skedarët e ekzekutimit lokal (ekzekuto.py)
 pipeline.log
 pipeline.lock
