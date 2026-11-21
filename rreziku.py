@@ -96,17 +96,22 @@ def shkronja(m, dez):
 
 def admiralty(det, statusi, dez):
     mediat = [m for m in det.get("mediat") or [] if isinstance(m, str)]
-    burimi = min((shkronja(m, dez) for m in mediat), key=RENDI_BURIMIT.index, default="F")
+    # Pas scoring.py: vetëm origjinat janë burime; një kopje s'konfirmon dhe s'e ngre shkronjën e burimit
+    origjinat = [m for m in det.get("mediat_e_pavarura") or [] if isinstance(m, str)] or mediat
+    burimi = min((shkronja(m, dez) for m in origjinat), key=RENDI_BURIMIT.index, default="F")
     soc = sum(m.startswith(SOCIALE) for m in mediat)
-    n = len(mediat) - soc + min(1, soc)  # kanalet sociale (shpesh ripostime) = një burim
-    k = len(scoring.pike_detajesh(det, len(mediat))[1])
+    n = det.get("burime_te_pavarura")
+    if type(n) is not int or n < 0:  # det i vjetër, para se scoring.py t'i grupojë ripostimet
+        n = len(mediat) - soc + min(1, soc)  # kanalet sociale (shpesh ripostime) = një burim
+    k = len(scoring.pike_detajesh(det, n)[1])
     rast = any(isinstance(c, dict) and c.get("lloji") == "rast_i_ngjashem" for c in det.get("konteksti") or [])
     if statusi == "e hedhur poshtë":
         info = 5
     elif statusi == "e konfirmuar":
         info = 1
     elif n >= 2:
-        info = (1 if len(det.get("gjuhet") or []) >= 2 or n >= 3 else 2) if k == 0 else 3 if k == 1 else 4
+        gjuhet = det.get("gjuhet_e_pavarura", det.get("gjuhet")) or []
+        info = (1 if len(gjuhet) >= 2 or n >= 3 else 2) if k == 0 else 3 if k == 1 else 4
     else:
         info = 3 if n == 1 and rast else 6
     return {"burimi": burimi, "informacioni": info, "kodi": f"{burimi}{info}"}
@@ -284,6 +289,19 @@ if __name__ == "__main__":
         assert vlereso(parade_e, {**parade, **shtese}, sot="2026-11-21")["rreziku"]["niveli"] == "i lartë"
     assert vlereso(parade_e, {**parade, "rajonale": False}, sot="2026-11-21")["rreziku"]["pike"] == 57
     assert any("rajonale pa lidhje" in a for a in vlereso(parade_e, parade, sot="2026-11-21")["rreziku"]["arsyet"])
+    # Ripostimet (scoring.py): 3 media, 1 origjinë -> s'është "e konfirmuar nga të tjerë"
+    ripost = {"mediat": ["Koha", "Telegrafi", "N1 Serbia"], "gjuhet": ["sq", "sr"]}
+    assert admiralty(ripost, None, {})["kodi"] == "B1"  # det i vjetër: sjellja e mëparshme
+    ripost.update(burime_te_pavarura=1, mediat_e_pavarura=["Koha"], gjuhet_e_pavarura=["sq"])
+    assert admiralty(ripost, None, {})["kodi"] == "B6", admiralty(ripost, None, {})
+    # Thashethem nga Telegram që e kopjon një media e besueshme: burimi mbetet F
+    tg = {"mediat": ["Telegram:kanali_x", "Koha"], "gjuhet": ["sr", "sq"], "burime_te_pavarura": 1,
+          "mediat_e_pavarura": ["Telegram:kanali_x"], "gjuhet_e_pavarura": ["sr"]}
+    assert admiralty(tg, None, {})["kodi"] == "F6", admiralty(tg, None, {})
+    # Dy origjina të pavarura me gjuhë të ndryshme -> 1, si më parë
+    dy = {**ripost, "burime_te_pavarura": 2, "mediat_e_pavarura": ["Koha", "N1 Serbia"],
+          "gjuhet_e_pavarura": ["sq", "sr"]}
+    assert admiralty(dy, None, {})["kodi"] == "B1"
     # Vetitë: matrica monotone, A kurrë, pa të dhëna -> i ulët/ARKIV/F6
     rendi = ["ARKIV", "MONITORIM", "RAPORT", "URGJENTE"]
     for niv in MATRICA.values():
