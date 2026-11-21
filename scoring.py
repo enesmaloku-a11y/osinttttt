@@ -80,8 +80,15 @@ PESHAT = {"burimet": 0.40, "mediat": 0.35, "detajet": 0.25}
 MEDIAT = {
     "Balkan Insight": 0.9, "Kallxo": 0.85, "RTK": 0.8, "Koha": 0.8, "N1 Serbia": 0.8,
     "Telegrafi": 0.6, "Gazeta Express": 0.6,
+    # Politikë korrigjimi dhe redaksi: https://hibrid.info/rreth-nesh/ dhe anëtarësi: https://members.efcsn.com/organization/action-for-democratic-society-ads-hibrid-info
+    "Hibrid.info": 0.8,
+    # Burim zyrtar i palës për veprimet e veta: https://www.kosovopolice.com/
+    "Policia e Kosovës": 0.7,
+    # Bazë e rubrikës. Pikët për korrigjime dhe anëtarësi mbeten të paverifikuara.
+    "RTS": 0.6,
 }
 E_PANJOHUR = 0.4  # çdo domen tjetër nga GDELT
+E_PLATFORME = 0.3
 
 
 def pike_burimesh(mediat, gjuhet):
@@ -92,9 +99,15 @@ def pike_burimesh(mediat, gjuhet):
     return p
 
 
+def besueshmeria_e_mediumit(emri) -> float:
+    if emri.startswith(("Telegram:", "YouTube:")):
+        return E_PLATFORME
+    return MEDIAT.get(emri, E_PANJOHUR)
+
+
 def pike_mediash(mediat):
     """Mesatarja e besueshmërisë së mediave që raportojnë."""
-    return sum(MEDIAT.get(m, E_PANJOHUR) for m in mediat) / len(mediat)
+    return sum(besueshmeria_e_mediumit(m) for m in mediat) / len(mediat)
 
 
 def pike_detajesh(det, n_burime):
@@ -146,6 +159,8 @@ if __name__ == "__main__":
     kontra, _ = vlereso({"mediat": ["Koha", "N1 Serbia"], "gjuhet": ["sq", "sr"], "killed": [1, 3]})
     pajtim, _ = vlereso({"mediat": ["Koha", "N1 Serbia"], "gjuhet": ["sq", "sr"], "killed": [1, 1]})
     assert nje < pajtim < tre and kontra < pajtim, (nje, kontra, pajtim, tre)
+    assert besueshmeria_e_mediumit("Telegram:x") == besueshmeria_e_mediumit("YouTube:y") == 0.3 < E_PANJOHUR
+    assert besueshmeria_e_mediumit("RTS") == MEDIAT["RTS"]
     from tempfile import TemporaryDirectory
     with TemporaryDirectory() as dosja:
         shteg = Path(dosja) / "model.json"
