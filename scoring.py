@@ -88,6 +88,7 @@ MEDIAT = {
     "RTS": 0.6,
     # Pikë fillestare për burime të reja; vlerë fillestare, jo e matur.
     "Kosovo Online": 0.6, "KoSSev": 0.6, "Novosti": 0.6, "Danas": 0.6, "RSE": 0.6,
+    "Informer": 0.6,
 }
 E_PANJOHUR = 0.4  # çdo domen tjetër nga GDELT
 E_PLATFORME = 0.3

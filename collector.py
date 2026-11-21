@@ -8,6 +8,7 @@ import socket
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from datetime import datetime, timezone
 from functools import lru_cache
 from threading import Lock
@@ -41,7 +42,8 @@ FEEDS = {
     "Danas": "https://www.danas.rs/feed/",
     # Shërbimi "Srbija" nga faqja zyrtare e RSS-ve: slobodnaevropa.org/rssfeeds.
     "RSE": "https://www.slobodnaevropa.org/api/zototl-vomx-tpepomq",
-    # Informer nuk u gjet në /rss, /rss.xml, /feed, /feed/, /rss/all, /rss/vesti.
+    # Feed-i kryesor i lidhur nga faqja zyrtare informer.rs/rss.
+    "Informer": "https://informer.rs/rss/najnovije-vesti",
     # MO Srbije: nuk u gjet RSS në faqen zyrtare ose shtigjet e zakonshme.
 }
 
@@ -54,6 +56,7 @@ BURIMET_INFO = {
     "Novosti": dict(domeni="novosti.rs", gjuha="sr", lloji="media", vendi="RS"),
     "Danas": dict(domeni="danas.rs", gjuha="sr", lloji="media", vendi="RS"),
     "RSE": dict(domeni="slobodnaevropa.org", gjuha="sr", lloji="media", vendi="RS"),
+    "Informer": dict(domeni="informer.rs", gjuha="sr", lloji="media", vendi="RS"),
 }
 AGENT = "osint-prototype/1.0"
 PUNETORE = 8  # sa shkarkime paralele
@@ -88,9 +91,6 @@ def _regex_ushtarak_dron():
 
 def ka_lidhje(burimi, titulli, permbledhja=""):
     info = BURIMET_INFO.get(burimi)
-    if info is None and burimi == "Informer":
-        # Filtri RS është gati, por feed-i i Informer nuk u gjet; burimi mbetet joaktiv.
-        info = dict(gjuha="sr", lloji="media", vendi="RS")
     if info is None and burimi == "MO Srbije":
         # Filtër i gatshëm për burimin zyrtar, por pa feed të verifikuar aktiv.
         info = dict(gjuha="sr", lloji="zyrtar", vendi="RS")
@@ -316,7 +316,7 @@ def verifiko(url, hash_i_ruajtur, teksti_bruto=None):
 
 def pergatit(burimi, url, titulli, data, permbledhja=""):
     """Merr tekstin e plotë dhe gjuhën; kthen dict gati për db (ose None)."""
-    # Për burimet e reja përdoret teksti i botuar në RSS, me URL-në e origjinalit.
+    # Përmbledhja e RSS përdoret kur teksti i plotë mungon.
     teksti_plote = nxirr_tekstin(url)
     permbledhje_rss = pastro_html(permbledhja)
     teksti = teksti_plote or permbledhje_rss or titulli
@@ -347,6 +347,8 @@ def ruaj_te_gjitha(detyrat, me_statistika=False):
                 tekstet[lloji] += 1
                 if db.ruaj_artikull(**art):
                     te_reja += 1
+            else:
+                tekstet["deshtoi"] += 1
     return (te_reja, tekstet) if me_statistika else te_reja
 
 
@@ -407,9 +409,10 @@ def kerkesat_gdelt(ora):
     return tuple((emri, query + " -domain:naslovi.net") for emri, query in GDELT_GRUPET)
 
 
-def detyrat_gdelt(artikujt, urls_rss=None, me_statistika=False):
+def detyrat_gdelt(artikujt, urls_rss=None, me_statistika=False, *, urls_gdelt=None):
     detyra = []
-    pare = {url_normalizuar(u) for u in (urls_rss or [])}
+    rss = {url_normalizuar(u) for u in (urls_rss or [])}
+    pare = {url_normalizuar(u) for u in (urls_gdelt or [])}
     statistika = {"rezultate": len(artikujt), "mbajtur": 0, "dublikat_rss": 0,
                   "dublikat_db": 0, "jashte": 0, "filtruar": 0, "date_gabim": 0}
     for r in artikujt:
@@ -425,10 +428,10 @@ def detyrat_gdelt(artikujt, urls_rss=None, me_statistika=False):
         if lejohet(url, "naslovi.net"):
             statistika["jashte"] += 1
             continue
-        if normal in pare:
+        if normal in rss:
             statistika["dublikat_rss"] += 1
             continue
-        if db.ekziston_url(url):
+        if normal in pare or db.ekziston_url(url):
             statistika["dublikat_db"] += 1
             continue
         if not (KOSOVA.search(titulli) or
@@ -451,9 +454,13 @@ def detyrat_gdelt(artikujt, urls_rss=None, me_statistika=False):
 def mblidh_gdelt(ora=None):
     te_reja = sukses = deshtime = 0
     # RSS përpunohet para GDELT; mbaj URL-të e tij për numërimin e dublikatave.
-    with db.lidhu() as con:
-        urls_rss = [r[0] for r in con.execute(
-            "SELECT url FROM articles WHERE burimi NOT LIKE 'GDELT:%'")]
+    urls_rss, urls_gdelt = [], []
+    with closing(db.lidhu()) as con:
+        for url, burimi in con.execute("SELECT url, burimi FROM articles"):
+            if burimi in FEEDS:
+                urls_rss.append(url)
+            elif burimi.startswith("GDELT:"):
+                urls_gdelt.append(url)
     for i, (emri, query) in enumerate(kerkesat_gdelt(datetime.now().hour if ora is None else ora)):
         if i:
             time.sleep(GDELT_PAUZA)
@@ -487,15 +494,18 @@ def mblidh_gdelt(ora=None):
             deshtime += 1
             print(f"  GDELT {emri}: përgjigje jo-JSON, HTTP {status}, Content-Type={content_type}, {len(trupi)} bajtë; body={trupi[:300]!r}")
             continue
-        detyrat, stats = detyrat_gdelt(artikujt[:50], urls_rss, me_statistika=True)
-        shtuar = ruaj_te_gjitha(detyrat)
+        detyrat, stats = detyrat_gdelt(artikujt[:50], urls_rss, me_statistika=True,
+                                       urls_gdelt=urls_gdelt)
+        shtuar, tekstet = ruaj_te_gjitha(detyrat, me_statistika=True)
         te_reja += shtuar
         sukses += 1
-        urls_rss.extend(d[1] for d in detyrat)
+        urls_gdelt.extend(d[1] for d in detyrat)
         print(f"  GDELT «{emri}»: HTTP {status}, JSON, {len(artikujt)} rezultate; "
               f"{stats['mbajtur']} mbajtur pas filtrit; {stats['dublikat_rss']} dublikatë RSS, "
               f"{stats['dublikat_db']} dublikatë DB, {stats['filtruar']} filtruar, "
-              f"{stats['jashte']} jashtë, {stats['date_gabim']} pa datë të vlefshme; {shtuar} të rinj")
+              f"{stats['jashte']} jashtë, {stats['date_gabim']} pa datë të vlefshme; {shtuar} të rinj, "
+              f"{tekstet['plote']} tekst i plotë, {tekstet['permbledhje']} përmbledhje, "
+              f"{tekstet['deshtoi']} dështuar")
     print(f"  GDELT përmbledhje: {sukses} grupe të suksesshme, {deshtime} të dështuara, {te_reja} artikuj të rinj")
     return te_reja
 
@@ -557,6 +567,7 @@ def kontrollo():
     for media_rs in ("RTS", "Novosti", "Informer", "Danas", "RSE"):
         assert ka_lidhje(media_rs, "protest u Beogradu") is False, media_rs
     assert ka_lidhje("RSE", "Policia arrestoi të dyshuarit në Kosovë")
+    assert ka_lidhje("Informer", "Izveštaj o Kosovu")
     assert ka_lidhje("RTS", "") is False and ka_lidhje("Koha", "") is True
     assert url_normalizuar("https://a.test/x/?utm_source=a&fbclid=z#f") == "https://a.test/x"
     assert normalizo_lidhjen_rss("http://www.rtklive.com/a", "rtklive.com") == "https://www.rtklive.com/a"
@@ -582,10 +593,10 @@ def kontrollo():
         assert pergatit("RTK", "https://example.com/a", "titull", "2026-01-01", "") [
             "_teksti_lloji"] == "deshtoi"
         llojet = iter(("plote", "permbledhje", "deshtoi"))
-        pergatit = lambda *_: {"_teksti_lloji": next(llojet, "deshtoi")}
+        pergatit = lambda *_: {"_teksti_lloji": lloji} if (lloji := next(llojet, None)) else None
         db.ruaj_artikull = lambda **_: True
-        nr, numrat = ruaj_te_gjitha([(1,), (2,), (3,)], me_statistika=True)
-        assert nr == 3 and numrat == {"plote": 1, "permbledhje": 1, "deshtoi": 1}
+        nr, numrat = ruaj_te_gjitha([(1,), (2,), (3,), (4,)], me_statistika=True)
+        assert nr == 3 and numrat == {"plote": 1, "permbledhje": 1, "deshtoi": 2}
     finally:
         nxirr_tekstin, pergatit = nxirr_vjeter, pergatit_vjeter
         db.ruaj_artikull = ruaj_vjeter
@@ -605,12 +616,15 @@ def kontrollo():
         detyra, stats = detyrat_gdelt([
             {"url": "https://www.rtklive.com/unique?utm_source=x", "title": "Kosovo security", "seendate": "20261121T100000Z"},
             {"url": "https://www.rtklive.com/lajm", "title": "Kosovo duplicate", "seendate": "20261121T100000Z"},
+            {"url": "https://www.rtklive.com/unique", "title": "Kosovo repeat", "seendate": "20261121T100000Z"},
+            {"url": "https://www.rtklive.com/old/?utm_source=gdelt", "title": "Kosovo old", "seendate": "20261121T100000Z"},
             {"url": "https://www.rtklive.com/other", "title": "Sport result", "seendate": "20261121T100000Z"},
             {"url": "https://www.rtklive.com/bad-date", "title": "Kosovo incident", "seendate": "bad"},
             {"url": "http://evil.example/item", "title": "Kosovo incident", "seendate": "20261121T100000Z"},
-        ], ["https://www.rtklive.com/lajm"], me_statistika=True)
-        assert len(detyra) == 1 and stats == {"rezultate": 5, "mbajtur": 1, "dublikat_rss": 1,
-            "dublikat_db": 0, "jashte": 1, "filtruar": 1, "date_gabim": 1}
+        ], ["https://www.rtklive.com/lajm"], me_statistika=True,
+            urls_gdelt=["https://www.rtklive.com/old"])
+        assert len(detyra) == 1 and stats == {"rezultate": 7, "mbajtur": 1, "dublikat_rss": 1,
+            "dublikat_db": 2, "jashte": 1, "filtruar": 1, "date_gabim": 1}
     finally:
         db.ekziston_url = ekziston_vjeter
     dl, sleep = _shkarko, time.sleep
