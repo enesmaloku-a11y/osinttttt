@@ -1,4 +1,4 @@
 # Tema e dashboard-it (lexohet kur niset "streamlit run dashboard.py" nga kjo dosje)
 [theme]
 base = "dark"
-primaryColor = "#c62828"
+primaryColor = "#b03a2e"  # e kuqe e qetë, e njëjtë me URGJENTE te grafikët
