@@ -1,4 +1,4 @@
-"""scoring.py - Besueshmëria e ngjarjeve me rregulla të qarta (JO nga modeli).
+"""Besueshmëria nga modeli i trajnuar ose nga rregullat fillestare.
 
 besueshmëria = 0.40 * burimet e pavarura
              + 0.35 * besueshmëria e mediave
@@ -6,8 +6,73 @@ besueshmëria = 0.40 * burimet e pavarura
 Çdo pjesë është 0..1, dhe arsyetimi ruhet që analisti ta shohë.
 """
 import json
+import math
+from pathlib import Path
+
+from vektori import EMRAT, vektori
 
 import db
+
+MODELI = Path("data/modeli_besueshmerise.json")
+PERSHKRIMET = dict(zip(EMRAT, ("media të pavarura", "gjuhë", "artikuj", "besueshmëria e mediave",
+    "konflikte në detaje", "vend i saktë", "datë e saktë", "aktor institucional i përmendur",
+    "orë mes artikujve", "rast i ngjashëm nga EUvsDisinfo")))
+
+
+def numer(x):
+    return type(x) in (float, int) and math.isfinite(x)
+
+
+def lexo_modelin(shteg):
+    try:
+        m = json.loads(shteg.read_text(encoding="utf-8"))
+        emrat = m["veçoritë"]
+        if (type(m["versioni"]) is not int or m["versioni"] != 1 or not isinstance(emrat, list)
+                or not emrat or len(set(emrat)) != len(emrat) or not set(emrat) <= set(EMRAT)
+                or not numer(m["intercepti"]) or type(m["n"]) is not int or m["n"] <= 0):
+            return None
+        for k in ("mesatarja", "devijimi", "koeficientet"):
+            if not isinstance(m[k], list) or len(m[k]) != len(emrat) or not all(map(numer, m[k])):
+                return None
+        prec = m["metrikat"]["logjistik"]["precision_080"]
+        if min(m["devijimi"]) <= 0 or (prec is not None and not (numer(prec) and 0 <= prec <= 1)):
+            return None
+        return m
+    except (OSError, ValueError, TypeError, KeyError, OverflowError, RecursionError):
+        return None
+
+
+def probabiliteti(m, vlera):
+    pjeset = [float(k) * ((float(x) - a) / s) for x, a, s, k in
+              zip(vlera, m["mesatarja"], m["devijimi"], m["koeficientet"], strict=True)]
+    z = math.fsum([m["intercepti"], *pjeset])
+    if not math.isfinite(z):
+        raise ValueError("Rezultat i pafundëm")
+    t = math.exp(-abs(z))
+    return (1 / (1 + t) if z >= 0 else t / (1 + t)), pjeset
+
+
+def vlereso_ngjarjen(e, det, modeli):
+    p, arsye = vlereso(det)
+    det.update(pike_rregullash=p, metoda="rregulla", arsyetimi=arsye)
+    if modeli is None:
+        return p
+    v = vektori(e)
+    emrat = modeli["veçoritë"]
+    try:
+        p_model, pjese = probabiliteti(modeli, [v[k] for k in emrat])
+    except (ValueError, OverflowError):
+        return p
+    arsyet = []
+    for k, vl in sorted(zip(emrat, pjese), key=lambda çift: -abs(çift[1]))[:3]:
+        drejtimi = "rrit" if vl > 0 else "ul" if vl < 0 else "neutral"
+        arsyet.append(f"{PERSHKRIMET[k]} ({v[k]:g}) → {drejtimi}")
+    prec = modeli["metrikat"]["logjistik"]["precision_080"]
+    matja = (f"{prec:.1%} e ngjarjeve me ≥80% u konfirmuan" if prec is not None
+             else "asnjë ngjarje nuk arriti pragun 80%")
+    arsyet.append(f"Modeli u trajnua mbi {modeli['n']} vendime. Në test, {matja}.")
+    det.update(metoda="model", arsyetimi=arsyet)
+    return p_model
 
 PESHAT = {"burimet": 0.40, "mediat": 0.35, "detajet": 0.25}
 
@@ -65,10 +130,10 @@ def vlereso(det):
 def vlereso_te_gjitha():
     """Llogarit besueshmërinë për çdo ngjarje në bazë. Kthen numrin e ngjarjeve."""
     ngjarjet = db.ngjarjet()
+    modeli = lexo_modelin(MODELI)
     for e in ngjarjet:
         det = json.loads(e["detajet_json"] or "{}")
-        pike, arsyet = vlereso(det)
-        det["arsyetimi"] = arsyet
+        pike = vlereso_ngjarjen(e, det, modeli)
         db.ruaj_besueshmerine(e["id"], pike, det)
     return len(ngjarjet)
 
@@ -81,5 +146,18 @@ if __name__ == "__main__":
     kontra, _ = vlereso({"mediat": ["Koha", "N1 Serbia"], "gjuhet": ["sq", "sr"], "killed": [1, 3]})
     pajtim, _ = vlereso({"mediat": ["Koha", "N1 Serbia"], "gjuhet": ["sq", "sr"], "killed": [1, 1]})
     assert nje < pajtim < tre and kontra < pajtim, (nje, kontra, pajtim, tre)
+    from tempfile import TemporaryDirectory
+    with TemporaryDirectory() as dosja:
+        shteg = Path(dosja) / "model.json"
+        det = {"mediat": ["Telegrafi"], "gjuhet": ["sq"]}
+        e = {"detajet_json": json.dumps(det)}
+        assert vlereso_ngjarjen(e, det, lexo_modelin(shteg)) == nje
+        model = {"versioni": 1, "n": 100, "veçoritë": ["n_mediat"], "mesatarja": [0],
+                 "devijimi": [1], "koeficientet": [math.log(3)], "intercepti": 0,
+                 "metrikat": {"logjistik": {"precision_080": None}}}
+        shteg.write_text(json.dumps(model), encoding="utf-8")
+        assert math.isclose(vlereso_ngjarjen(e, det, lexo_modelin(shteg)), .75)
+        shteg.write_text("{", encoding="utf-8")
+        assert vlereso_ngjarjen(e, det, lexo_modelin(shteg)) == nje and det["metoda"] == "rregulla"
     print(f"Shembuj: 1 burim {nje}, 2 burime me kontradiktë {kontra}, 2 në pajtim {pajtim}, 3 burime {tre}")
     print(f"U vlerësuan {vlereso_te_gjitha()} ngjarje.")
