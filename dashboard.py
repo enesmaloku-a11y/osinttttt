@@ -52,6 +52,12 @@ h3 { text-transform: uppercase; letter-spacing: .08em; font-size: .9rem !importa
 .pllaka .t { color: #8b949e; font-size: .72rem; text-transform: uppercase; letter-spacing: .1em; }
 .bluf { border-left: 3px solid #b03a2e; padding: .55rem .9rem; margin: .9rem 0 .4rem; }
 .bluf .t { color: #8b949e; letter-spacing: .1em; font-size: .72rem; text-transform: uppercase; }
+.seksion { color: #8b949e; font-size: .72rem; letter-spacing: .12em; text-transform: uppercase;
+           border-bottom: 1px solid #2c323a; padding-bottom: .2rem; margin: .9rem 0 .4rem; }
+button[role="tab"] p { font-size: .82rem; letter-spacing: .06em; text-transform: uppercase; }
+[data-testid="stSidebar"] h2 { font-size: .8rem !important; letter-spacing: .12em; text-transform: uppercase;
+                               color: #8b949e; }
+[data-testid="stExpander"] summary p { font-size: .92rem; }
 </style>""", unsafe_allow_html=True)
 
 # Cloud (Streamlit Cloud është Linux, pa Ollama): vetëm demo me të dhëna sintetike, pa nisje të
@@ -110,7 +116,6 @@ te_gjitha = raporti.ngjarjet()
 ETIKETA = {"URGJENTE": ":red-badge[URGJENTE]", "RAPORT": ":orange-badge[RAPORT]",
            "MONITORIM": ":blue-badge[MONITORIM]", "ARKIV": ":gray-badge[ARKIV]", None: ":gray-badge[PA RREZIK]"}
 VENDIMI = {"e konfirmuar": " · :green[Konfirmuar]", "e pakonfirmuar": "", "e hedhur poshtë": " · :gray[Hedhur poshtë]"}
-NGJYRA_HARTE = {"URGJENTE": "red", "RAPORT": "orange", "MONITORIM": "blue", "ARKIV": "gray", None: "lightgray"}
 SAKTESIA = {"village": "fshat", "municipality": "komunë", "region": "vetëm rajon",
             "exact": "e saktë", "approximate": "e përafërt", None: "e panjohur"}
 # Ngjyrat e prioritetit në grafikë (të njëjtat si në hartë). Matrica s'ka "i pallogaritur":
@@ -217,6 +222,16 @@ if kerko:
     f = f[ka]
 
 
+def seksion(titulli):
+    """Etiketë e vogël seksioni (konstante e kodit, jo e dhënë nga lajmet)."""
+    st.markdown(f'<div class="seksion">{html.escape(titulli)}</div>', unsafe_allow_html=True)
+
+
+def tabela(rreshtat):
+    """Tabelë e thjeshtë çelës-vlerë në Markdown; vlerat kalojnë nga raporti.pastro."""
+    return "| | |\n|---|---|\n" + "\n".join(f"| {k} | {v} |" for k, v in rreshtat)
+
+
 # ---------------- Kartela e një ngjarjeje ----------------
 def kartela(e, skeda):
     """Expander me gjithë arsyetimin dhe vendimin e analistit. 'skeda' i bën çelësat unikë."""
@@ -249,33 +264,44 @@ def kartela(e, skeda):
                        f"({raporti.pastro(v21.get('pse'), 120)}). Nivele paraprake, për validim nga përgjegjësi.")
             if v21.get("verifikim_urgjent") is True:
                 st.error("Verifikim urgjent: ndikim potencialisht i rëndë me prova të kufizuara.")
-        shenj = ", ".join(kercenimet.SHENJESTRAT.get(s, s) for s in det.get("shenjestrat") or []) or "-"
+        shenj = ", ".join(kercenimet.SHENJESTRAT.get(s, s) for s in det.get("shenjestrat") or []) or "–"
         aktori = det.get("aktori")
-        st.write(f"**Kategoria:** {raporti.pastro(raporti.kategoria(e), 80)}  ·  "
-                 f"**Aktori (sipas modelit):** {kercenimet.AKTORET.get(aktori, '-') if aktori else '-'}  ·  "
-                 f"**Shenjestrat:** {shenj}  ·  **Lidhje me FSK:** {'po' if det.get('lidhje_me_fsk') else 'jo'}"
-                 f"  ·  **Zona:** {'rajonale' if det.get('rajonale') else 'Kosovë'}")
-        st.write(f"**Lloji:** {e.get('lloji') or '-'}  ·  **Vendi:** {raporti.pastro(e.get('vendi'), 60) or '-'} "
-                 f"({SAKTESIA.get(det.get('saktesia_vendit'), 'e panjohur')})  ·  "
-                 f"**Data dhe ora:** {koha_e(e)} (saktësia e datës: {SAKTESIA.get(det.get('saktesia_dates'), 'e panjohur')})  ·  **Gjuha:** {e.get('gjuha')}")
         try:
             bosh = json.loads(e.get("boshllequet") or "[]")
         except ValueError:
             bosh = []
-        st.write("**Boshllëqet:** " + (", ".join(map(raporti.pastro, bosh)) or "asnjë"))
-        st.write(f"**Mediat:** {', '.join(map(raporti.pastro, det.get('mediat') or [])) or '-'}  ·  "
-                 f"**Aktorët në lajme:** {', '.join(map(raporti.pastro, det.get('aktoret') or [])) or '-'}")
-        if arsyet:
-            st.write("**Pse ky rrezik:**")
-            for a in arsyet:
-                st.markdown(f"- {raporti.pastro(a, 200)}")
-        if det.get("arsyetimi"):
-            st.write("**Pse kjo besueshmëri:**")
-            for a in det["arsyetimi"]:
-                st.markdown(f"- {raporti.pastro(a, 200)}")
+        majtas, djathtas = st.columns(2)
+        with majtas:
+            seksion("Çfarë ndodhi")
+            st.markdown(tabela([
+                ("Kategoria", raporti.pastro(raporti.kategoria(e), 80)),
+                ("Aktori (sipas modelit)", kercenimet.AKTORET.get(aktori, "–") if aktori else "–"),
+                ("Shenjestrat", shenj),
+                ("Vendi", f"{raporti.pastro(e.get('vendi'), 60) or '–'} "
+                          f"({SAKTESIA.get(det.get('saktesia_vendit'), 'e panjohur')})"),
+                ("Data dhe ora", f"{koha_e(e)} (data {SAKTESIA.get(det.get('saktesia_dates'), 'e panjohur')})"),
+                ("Zona · lidhje me FSK", f"{'rajonale' if det.get('rajonale') else 'Kosovë'} · "
+                                         f"{'po' if det.get('lidhje_me_fsk') else 'jo'}"),
+                ("Lloji · gjuha", f"{raporti.pastro(e.get('lloji'), 40) or '–'} · {raporti.pastro(e.get('gjuha'), 5)}"),
+            ]))
+        with djathtas:
+            seksion("Burimet")
+            for u in e["burimet_l"]:
+                st.markdown(f"- [{raporti.pastro(u, 90)}]({u})" if raporti.url_e_sigurt(u)
+                            else f"- `{raporti.pastro(u, 120)}`")
+            st.caption("Mediat: " + (", ".join(map(raporti.pastro, det.get("mediat") or [])) or "–"))
+            seksion("Boshllëqet e informacionit")
+            st.markdown("\n".join(f"- {raporti.pastro(x)}" for x in bosh) if bosh else "Asnjë i shënuar.")
+        majtas, djathtas = st.columns(2)
+        with majtas:
+            seksion("Pse ky rrezik")
+            st.markdown("\n".join(f"- {raporti.pastro(a, 200)}" for a in arsyet) if arsyet else "–")
+        with djathtas:
+            seksion("Pse kjo besueshmëri")
+            st.markdown("\n".join(f"- {raporti.pastro(a, 200)}" for a in det.get("arsyetimi") or []) or "–")
         konteksti = [c for c in det.get("konteksti") or [] if isinstance(c, dict)]
         if konteksti:
-            st.write("**Konteksti i jashtëm:**")
+            seksion("Konteksti i jashtëm")
             for c in konteksti:
                 u = raporti.url_e_sigurt(c.get("url"))
                 titulli = raporti.pastro(c.get("titulli"), 150)
@@ -289,18 +315,14 @@ def kartela(e, skeda):
                 st.markdown(("- Rast i ngjashëm: " if c.get("lloji") == "rast_i_ngjashem" else "- Trend: ")
                             + " · ".join(pjeset))
             st.caption("Ngjashmëri automatike, jo provë. Verifikoje te burimi.")
-        st.write("**Burimet:**")
-        for u in e["burimet_l"]:
-            st.markdown(f"- [{u}]({u})" if raporti.url_e_sigurt(u) else f"- `{raporti.pastro(u, 120)}`")
-
         # Vendimi i analistit: sistemi vetëm sugjeron, njeriu vendos
-        st.write("**Vendimi i analistit:**")
+        seksion("Vendimi i analistit")
         k = e["url_kryesor"]
-        statusi = st.radio("Statusi", db.STATUSET, index=db.STATUSET.index(e["statusi"]),
-                           key=f"st_{skeda}_{k}", horizontal=True, label_visibility="collapsed")
+        statusi = st.segmented_control("Statusi", db.STATUSET, default=e["statusi"], key=f"st_{skeda}_{k}",
+                                       label_visibility="collapsed") or e["statusi"]
         shenimi = st.text_input("Shënim", e["shenimi"], key=f"sh_{skeda}_{k}",
                                 placeholder="p.sh. e konfirmoi Policia në Facebook")
-        if st.button("Ruaj vendimin", key=f"rv_{skeda}_{k}"):
+        if st.button("Ruaj vendimin", key=f"rv_{skeda}_{k}", type="primary"):
             db.ruaj_vendimin(k, statusi, shenimi)
             st.cache_data.clear()
             st.rerun()
@@ -388,7 +410,7 @@ def paneli_serbia(aktive, te_gjitha):
                 "Prej tyre për verifikim": sum(map(raporti.per_verifikim, urg)),
                 "Rreziku mesatar": round(sum(pike) / len(pike)) if pike else None}
     t, p = numrat(tani), numrat(para)
-    for kolona, (emri, v) in zip(st.columns(4), t.items()):
+    for kolona, (emri, v) in zip(st.columns(2) + st.columns(2), t.items()):  # 2x2: lexohet edhe në kolonë të ngushtë
         delta = v - p[emri] if v is not None and p[emri] is not None else None
         vlera = "–" if v is None else f"{v}/100" if emri == "Rreziku mesatar" else v
         kolona.metric(emri, vlera, delta=delta, delta_color="inverse", help="Ndryshimi kundrejt 7 ditëve para")
@@ -440,16 +462,18 @@ def harta_e(ngjarjet):
                  f"{siguro(perqind(raporti.besueshmeria(e)))} · Vendi: {siguro(SAKTESIA.get(sv, 'e panjohur'))}"
                  f"<br>Vendimi: {siguro(e['statusi'])}")
         tooltip = siguro(f"{koha_e(e)} · {raporti.rresht(e['titulli'], 100)}")
-        ngjyra = NGJYRA_HARTE.get(p, "lightgray")
+        ngjyra = NGJYRA_HEX.get(p, NGJYRAT[4])
         # Pa saktësi të dhënë, koordinatat vijnë nga lista e komunave: trajtohen si komunë
         rreze = RREZET.get(sv or "municipality")
         if rreze:
             # Vend i përafërt: rreth sa pasiguria, që të mos duket më i saktë se ç'është
-            folium.Circle([e["lat"], e["lon"]], radius=rreze, color=NGJYRA_HEX.get(p, NGJYRAT[4]), fill=True,
+            folium.Circle([e["lat"], e["lon"]], radius=rreze, color=ngjyra, weight=1.5, fill=True,
                           fill_opacity=0.15, tooltip=tooltip, popup=popup).add_to(harta)
         if not rreze or det.get("rajonale"):
-            ikona = folium.Icon(color=ngjyra, icon="globe" if det.get("rajonale") else "info-sign")
-            folium.Marker([e["lat"], e["lon"]], tooltip=tooltip, popup=popup, icon=ikona).add_to(harta)
+            # Pikë e plotë = vend i saktë; unazë = ngjarje rajonale (jashtë Kosovës)
+            folium.CircleMarker([e["lat"], e["lon"]], radius=7, color=ngjyra, weight=2, fill=True,
+                                fill_opacity=0.25 if det.get("rajonale") else 0.9,
+                                tooltip=tooltip, popup=popup).add_to(harta)
     return harta
 
 
@@ -497,7 +521,9 @@ with tab_per:
     with djathtas:
         st.subheader("Ngjarjet më të reja")
         if aktive:
-            st.dataframe(ngjarjet_e_fundit(aktive), hide_index=True, width="stretch", height=420,
+            st.dataframe(ngjarjet_e_fundit(aktive).style.map(
+                             lambda v: f"color: {NGJYRA_HEX.get(v, NGJYRAT[4])}; font-weight: 600",
+                             subset=["Prioriteti"]), hide_index=True, width="stretch", height=420,
                          column_order=["Prioriteti", "Data dhe ora", "Ngjarja"])
         else:
             st.info("S'ka ende ngjarje.")
@@ -580,7 +606,7 @@ with tab_ngj:
     harta = harta_e(ngj)
     st.caption("Ngjyra: e kuqe URGJENTE, portokalli RAPORT, blu MONITORIM, gri ARKIV. Lajmet s'kanë GPS, "
                "prandaj vendi tregohet me saktësinë që dihet: rreth ~15 km = vetëm rajoni, rreth ~5 km = "
-               "komuna (qendra e saj), pikë = fshat ose vend i saktë. Globi = ngjarje rajonale (jashtë "
+               "komuna (qendra e saj), pikë = fshat ose vend i saktë. Unaza = ngjarje rajonale (jashtë "
                "Kosovës). Ngjarjet pa vend të njohur nuk dalin në hartë, por janë në listë. Harta kërkon "
                "internet (pa të nuk shfaqet; kronologjia dhe lista punojnë).")
     # Qendra dhe zoom-i i jepen st_folium-it: kalimi mes pamjeve s'e ringarkon hartën
