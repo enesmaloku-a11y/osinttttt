@@ -5,13 +5,17 @@ Rregullat (pa model):
   dhe kanë të njëjtin vend OSE përmbledhje shumë të ngjashme.
 - Burimet e pavarura numërohen sipas mediumit: "GDELT:telegrafi.com" = "Telegrafi".
 - Besueshmëria NUK llogaritet këtu (do e bëjë scoring.py); këtu vetëm boshllëqet.
+- K3: çdo ngjarje merr kategorinë, aktorin, shenjestrat dhe lidhjen me FSK-në nga artikujt e
+  saj; artikujt e shënuar "relevante": false nuk bëhen ngjarje.
 """
 import json
 import re
 import unicodedata
+from collections import Counter
 from datetime import datetime
 
 import db
+import kercenimet
 
 # Koordinata të përafërta të komunave/vendeve (emri pa diakritikë -> lat, lon).
 # Shqip dhe serbisht, që të njihen të dyja format.
@@ -90,12 +94,30 @@ CIRILIK = str.maketrans({
     "ф": "f", "х": "h", "ц": "c", "ч": "c", "џ": "dz", "ш": "s",
 })
 
-# Domeni i GDELT -> emri i mediumit, që të mos numërohet dy herë
+# Domeni i GDELT -> emri i mediumit, që të mos numërohet dy herë. Emri duhet të jetë IDENTIK me
+# çelësin te collector.FEEDS, ndryshe i njëjti medium numërohet dy herë dhe fryn besueshmërinë.
 DOMENET = {
     "rtklive.com": "RTK", "koha.net": "Koha", "kallxo.com": "Kallxo",
     "telegrafi.com": "Telegrafi", "gazetaexpress.com": "Gazeta Express",
     "n1info.rs": "N1 Serbia", "balkaninsight.com": "Balkan Insight",
+    # K6: burimet e reja (e njëjta listë si te collector.py i B-së)
+    "kosovo-online.com": "Kosovo Online", "kossev.info": "KoSSev",
+    "rts.rs": "RTS", "novosti.rs": "Novosti",
+    "informer.rs": "Informer", "danas.rs": "Danas",
+    "slobodnaevropa.org": "RSE", "hibrid.info": "Hibrid.info",
+    "kosovopolice.com": "Policia e Kosovës", "mod.gov.rs": "MO Srbije",
+    # opsionale (të verifikuara nga kërkimi; s'bëjnë dëm edhe nëse B s'i shton te FEEDS)
+    "b92.net": "B92", "blic.rs": "Blic", "kurir.rs": "Kurir", "evropaelire.org": "Evropa e Lirë",
+    "prishtinainsight.com": "Prishtina Insight", "reporteri.net": "Reporteri",
+    "president-ksgov.net": "Presidenca e Kosovës", "srbija.gov.rs": "Vlada Srbije",
+    "istinomer.rs": "Istinomer",
 }
+
+# shortcut: kategoria për JSON-et e vjetër (para K2) nga "type"; për këto 5 lloje zëvendëson
+# LLOJI_RB të rreziku.py. Hiqe kur të gjithë artikujt të jenë rinxjerrë me taksoninë.
+LLOJI_NE_KATEGORI = {"cyber": "kibernetik", "disinformation": "dezinformim",
+                     "infrastructure_disruption": "infrastrukture_kritike",
+                     "border_incident": "kufi_kontrabande", "protest_unrest": "trazira_bllokada"}
 
 
 def pa_diakritike(s):
@@ -122,10 +144,46 @@ def gjej_vendin(vendi):
 
 
 def mediumi(burimi):
+    """Emri i mediumit; njeh edhe nëndomenet ("GDELT:sr.n1info.rs" = "N1 Serbia")."""
     if burimi.startswith("GDELT:"):
-        d = burimi[6:].removeprefix("www.")
-        return DOMENET.get(d, d)
+        d = burimi[6:].lower().removeprefix("www.")
+        return next((m for dom, m in DOMENET.items() if d == dom or d.endswith("." + dom)), d)
     return burimi
+
+
+def merret(j):
+    """A bëhet artikulli pjesë e një ngjarjeje? Ngjarje sigurie (edhe rajonale), jo e palidhur."""
+    return bool(j.get("is_security_event")) and j.get("relevante", True) is not False
+
+
+def kategoria_e(j):
+    """Kategoria e artikullit nga K2; për JSON-et e vjetër pa të, nga "type"."""
+    k = j.get("kategoria")
+    if isinstance(k, str) and kercenimet.kategoria_valide(k):
+        return k
+    return LLOJI_NE_KATEGORI.get(j.get("type"), "tjeter")
+
+
+def agrego(grup):
+    """K3: kategoria dhe aktori më të shpeshtë (pa "tjeter"/"i_panjohur"; barazimi sipas radhës
+    te kercenimet.py), bashkimi i shenjestrave dhe lidhja me FSK-në."""
+    kat = Counter(a["kategoria"] for a in grup if a["kategoria"] != "tjeter")
+    akt = Counter(a.get("aktori") for a in grup
+                  if a.get("aktori") in kercenimet.AKTORET and a.get("aktori") != "i_panjohur")
+    rk, ra = list(kercenimet.KATEGORITE), list(kercenimet.AKTORET)
+    shenjestrat = {s for a in grup for s in a.get("shenjestrat") or []}
+    return {
+        "kategoria": min(kat, key=lambda k: (-kat[k], rk.index(k))) if kat else "tjeter",
+        "aktori": min(akt, key=lambda x: (-akt[x], ra.index(x))) if akt else "i_panjohur",
+        "shenjestrat": [s for s in kercenimet.SHENJESTRAT if s in shenjestrat],
+        "lidhje_me_fsk": any(a.get("lidhje_me_fsk") is True for a in grup),
+    }
+
+
+def rendit_burimet(urls, vendimet):
+    """URL-ja me vendim analisti del e para, që vendimi të mbetet te burimet[0] edhe kur rigrupimi
+    sjell një artikull më të hershëm. Sort i qëndrueshëm: të tjerat mbeten sipas datës."""
+    return sorted(urls, key=lambda u: u not in vendimet)
 
 
 # Fjalë që dalin pothuajse në çdo përmbledhje; s'tregojnë që dy ngjarje janë e njëjta
@@ -210,13 +268,13 @@ def korrelo():
     artikujt = []
     for r in db.artikuj_te_nxjerre():
         j = json.loads(r["rezultati_json"])
-        # Mbahen të gjitha ngjarjet e sigurisë; ato jashtë Kosovës shënohen si rajonale
-        if not j.get("is_security_event"):
+        # Mbahen të gjitha ngjarjet e sigurisë (ato jashtë Kosovës si rajonale), pa të palidhurat
+        if not merret(j):
             continue
         vendi, lat, lon = gjej_vendin(j.get("place"))
         artikujt.append({
             **j, "url": r["url"], "gjuha": r["gjuha"], "mediumi": mediumi(r["burimi"]),
-            "rajonale": not j.get("in_kosovo"),
+            "rajonale": not j.get("in_kosovo"), "kategoria": kategoria_e(j),
             "dita": j.get("event_date") or r["data"][:10],
             "data_nga_publikimi": not j.get("event_date"),
             "vendi": vendi, "vendi_tekst": j.get("place"), "lat": lat, "lon": lon,
@@ -231,12 +289,13 @@ def korrelo():
         else:
             grupet.append([a])
 
+    vendimet = db.vendimet()
     db.fshi_ngjarjet()
     for g in grupet:
         p = g[0]
         db.ruaj_ngjarje(
             titulli=p["summary"] or "(pa përmbledhje)", data=p["dita"], gjuha=p["gjuha"],
-            burimet=[a["url"] for a in g], boshllequet=boshllequet(g),
+            burimet=rendit_burimet([a["url"] for a in g], vendimet), boshllequet=boshllequet(g),
             lloji=p["type"], vendi=p["vendi_tekst"], lat=p["lat"], lon=p["lon"],
             detajet={
                 "rajonale": p["rajonale"],  # True = ngjarja ndodhi jashtë Kosovës
@@ -246,6 +305,7 @@ def korrelo():
                 "saktesia_vendit": saktesia_vendit(g),
                 "saktesia_dates": saktesia_dates(g),
                 **{k: [a[k] for a in g] for k in ("killed", "injured", "arrested")},
+                **agrego(g),  # K3: kategoria, aktori, shenjestrat, lidhje_me_fsk
             },
         )
     return len(grupet)
@@ -292,6 +352,27 @@ if __name__ == "__main__":
     assert perputhen([a], dict(a))
     assert not perputhen([a], {**a, "rajonale": False})
     assert not perputhen([{**a, "rajonale": False}], a)
+    # DOMENET: çdo emër vetëm një herë (rreziku.py e kthen së prapthi); nëndomenet njihen
+    assert len(set(DOMENET.values())) == len(DOMENET)
+    assert mediumi("GDELT:sr.n1info.rs") == "N1 Serbia" and mediumi("GDELT:www.kossev.info") == "KoSSev"
+    assert mediumi("GDELT:jon1info.rs") == "jon1info.rs" and mediumi("Telegram:x") == "Telegram:x"
+    # K3: artikujt e palidhur s'bëhen ngjarje; relevante që mungon = e lidhur
+    assert merret({"is_security_event": True}) and not merret({"is_security_event": False})
+    assert not merret({"is_security_event": True, "relevante": False})
+    # K3: barazimi sipas radhës te kercenimet, "i_panjohur" s'numërohet, JSON i vjetër nga "type"
+    assert kategoria_e({"type": "border_incident"}) == "kufi_kontrabande"
+    assert kategoria_e({"type": "murder"}) == "tjeter"
+    assert kategoria_e({"kategoria": "tjeter", "type": "cyber"}) == "tjeter"  # K2 e dha "tjeter"
+    g = [{"kategoria": kategoria_e({"type": "cyber"}), "aktori": "i_panjohur", "shenjestrat": ["institucione"]},
+         {"kategoria": "dezinformim", "aktori": "rusia", "shenjestrat": ["fsk"], "lidhje_me_fsk": True},
+         {"kategoria": "tjeter"}]
+    assert agrego(g) == {"kategoria": "kibernetik", "aktori": "rusia",
+                         "shenjestrat": ["fsk", "institucione"], "lidhje_me_fsk": True}, agrego(g)
+    assert agrego([{"kategoria": "tjeter"}]) == {"kategoria": "tjeter", "aktori": "i_panjohur",
+                                                 "shenjestrat": [], "lidhje_me_fsk": False}
+    # Vendimi i analistit mbetet te burimet[0] edhe kur rigrupimi sjell artikull më të hershëm
+    assert rendit_burimet(["u1", "u2"], {"u2": {"statusi": "e konfirmuar"}}) == ["u2", "u1"]
+    assert rendit_burimet(["u1", "u2"], {}) == ["u1", "u2"]
     print(f"U krijuan {korrelo()} ngjarje.")
     # Ngjarjet rindërtohen nga e para, ndaj besueshmëria rillogaritet menjëherë
     import scoring
