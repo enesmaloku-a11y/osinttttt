@@ -171,7 +171,8 @@ def vlereso(e, det, *, sot=None, te_tjerat=(), vendimet=None, dez=None):
     prioriteti = "ARKIV" if statusi == "e hedhur poshtë" else MATRICA[niveli][brezi]
     if prioriteti == "URGJENTE":
         arsyet.append("URGJENTE për veprim" if brezi == 0 else
-                      f"URGJENTE për verifikim, jo për veprim (besueshmëria {b} < {B_LARTE})")
+                      f"URGJENTE për verifikim, jo për veprim (besueshmëria "
+                      f"{'e pavlerësuar' if b is None else f'{b} < {B_LARTE}'})")
     elif statusi == "e hedhur poshtë":
         arsyet.append("ARKIV: analisti e hodhi poshtë")
     return {"rreziku": {"pike": pike, "niveli": niveli, "arsyet": arsyet},
@@ -271,6 +272,8 @@ if __name__ == "__main__":
         assert r == vlereso(e, det, sot="2026-11-21", te_tjerat=tt, vendimet=VEND, dez=dez)  # idempotent
         assert json.dumps(det, sort_keys=True) == para  # det s'ndryshon
     assert "për verifikim" in vlereso(*RASTET[2][:2], sot="2026-11-21")["rreziku"]["arsyet"][-1]
+    pa_b = {**RASTET[2][0], "besueshmeria": None}  # besueshmëria mungon: tekst i lexueshëm, jo "None"
+    assert vlereso(pa_b, RASTET[2][1], sot="2026-11-21")["rreziku"]["arsyet"][-1].endswith("(besueshmëria e pavlerësuar)")
     # Vendimi gjendet edhe kur një artikull më i hershëm u bë burimet[0]
     e = dict(ng("2026-11-20", "Zvečan", "Road blocked", 0.9), burimet=json.dumps(["i_ri", "u8"]))
     assert statusi_i(e, VEND) == "e hedhur poshtë" and vlereso(e, {}, vendimet=VEND)["prioriteti"] == "ARKIV"
