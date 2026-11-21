@@ -10,6 +10,7 @@ import sqlite3
 from collections import Counter
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlparse
 
 import altair as alt
 import folium
@@ -232,6 +233,19 @@ def data_e(e):
         return None
 
 
+def ngjarjet_e_fundit(ngjarjet, sa=10):
+    """Ngjarjet më të reja sipas datës (brenda ditës sipas prioritetit), me burimin e artikullit të parë."""
+    burimi_i_url = dict(zip(artikujt["url"], artikujt["burimi"]))
+    rreshtat = []
+    for e in sorted(ngjarjet, key=lambda e: str(data_e(e) or ""), reverse=True)[:sa]:
+        p, b = raporti.prioriteti(e), e["burimet_l"]
+        burimi = (burimi_i_url.get(b[0]) or urlparse(str(b[0])).hostname or "–") if b else "–"
+        rreshtat.append({"Prioriteti": f"{SHENJA.get(p, SHENJA[None])} {p or 'i pallogaritur'}",
+                         "Data": str(data_e(e) or "–"), "Ngjarja": raporti.rresht(e["titulli"], 110),
+                         "Burimi": burimi + (f" (+{len(b) - 1})" if len(b) > 1 else "")})
+    return pd.DataFrame(rreshtat)
+
+
 def grafiku_matrices(ngjarjet):
     """Matrica rrezik x besueshmëri. Kthen (grafiku ose None, sa ngjarje s'kanë rrezik ose besueshmëri)."""
     pikat, pa_vlera = [], 0
@@ -240,7 +254,7 @@ def grafiku_matrices(ngjarjet):
         if pike is None or b is None or p is None:
             pa_vlera += 1
             continue
-        pikat.append({"titulli": raporti.rresht(e["titulli"], 120), "data": str(e["data"])[:10],
+        pikat.append({"titulli": raporti.rresht(e["titulli"], 120), "data": str(data_e(e) or "–"),
                       "prioriteti": p, "rreziku": pike,
                       "besueshmeria": b, "kategoria": raporti.rresht(raporti.kategoria(e), 80),
                       "burime": len(e["burimet_l"])})
@@ -346,6 +360,11 @@ k4.metric("Artikuj", len(f))
 with tab_per:
     st.caption("Në një shikim: sa kërcënime urgjente ka, nga kush, ku përafërsisht dhe pse. Respekton "
                "filtrat e sidebar-it; ngjarjet e hedhura poshtë nga analisti s'numërohen.")
+    st.subheader("Ngjarjet më të reja")
+    if aktive:
+        st.dataframe(ngjarjet_e_fundit(aktive), hide_index=True, width="stretch")
+    else:
+        st.info("S'ka ende ngjarje.")
     st.subheader("Rreziku × besueshmëria")
     grafiku, pa_vlera = grafiku_matrices(aktive)
     if grafiku is None:
