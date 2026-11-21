@@ -82,7 +82,8 @@ KBS = re.compile(r"\b(?:KBS|КБС)\b")
 KOREJA = re.compile(r"korej|кореј|korea", re.I)
 # Policia e Kosovës: "veri" te një burim zyrtar XK është veriu i Kosovës; me akt dhune pranohet.
 # Jashtë veriut një sulm i zakonshëm mbetet jashtë, si më parë (p.sh. Ferizaj). Auditi B-4.
-VERI = re.compile(r"\bveri\w*", re.I)
+# Vetëm format e "veri/verior", jo "verifikon" ose "vërtetë"
+VERI = re.compile(r"\bveri(?:u|ut|un|or\w*)?\b", re.I)
 DHUNE_XK = re.compile(r"\b(?:sulm|plagos|vra[sn]|arm[eë]|shpërth|kërcën|rrëmb)\w*", re.I)
 # Formulimi shqip për forca ushtarake serbe që taksonomia s'e kap ("forcat serbe", "ushtarët serbë").
 # shortcut: jeton këtu që të mos preket kercenimet.py para ngrirjes; zhvendose te taksonomia pas saj.
@@ -757,6 +758,7 @@ def kontrollo():
     for b, t in (("RTS", "KBS: Južnokorejski predsednik posetio Japan"),
                  ("RTS", "Saradnja sa kbs muzičkim festivalom"),
                  ("Policia e Kosovës", "Aksident trafiku në veri, pa të lënduar"),
+                 ("Policia e Kosovës", "Sulm ndaj personit zyrtar në Ferizaj, policia verifikon rrethanat"),
                  ("RTS", "Napad na policajca na severu Srbije, u Subotici"),
                  ("Informer", "Radoičić osvojio turnir u šahu u Nišu"),
                  ("RTS", "Vučić: Plate i penzije rastu od januara")):
