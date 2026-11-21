@@ -149,8 +149,14 @@ def dita(s):
 
 
 def perputhen(grup, art):
-    """A i përket artikulli këtij grupi? Krahasohet me artikullin e parë të grupit."""
-    g = grup[0]
+    """A i përket artikulli këtij grupi? Duhet të përputhet me shumicën e anëtarëve (> gjysma),
+    jo vetëm me njërin: A~B dhe B~C s'e bashkojnë C-në me A-në (pa zinxhir tranzitiv).
+    Grupet me 1-2 artikuj kërkojnë përputhje me të gjithë."""
+    return 2 * sum(perputhen_cift(g, art) for g in grup) > len(grup)
+
+
+def perputhen_cift(g, art):
+    """Rregullat për dy artikuj: lloji, data (±1 ditë), vendi dhe ngjashmëria e përmbledhjes."""
     if g["rajonale"] != art["rajonale"]:  # ngjarje jashtë Kosovës s'bashkohet me një brenda
         return False
     if g["type"] != art["type"] or abs((dita(g["dita"]) - dita(art["dita"])).days) > 1:
@@ -292,6 +298,15 @@ if __name__ == "__main__":
     assert perputhen([a], dict(a))
     assert not perputhen([a], {**a, "rajonale": False})
     assert not perputhen([{**a, "rajonale": False}], a)
+    # Pa zinxhir: A~B dhe B~C, por A dhe C janë ngjarje të ndryshme -> C s'hyn te grupi i A-së
+    ka = {**a, "rajonale": False, "type": "protest_unrest", "vendi": None}
+    A = {**ka, "summary": "farmers protest fuel prices highway"}
+    B = {**ka, "summary": "farmers protest fuel prices teachers strike salaries"}
+    C = {**ka, "summary": "teachers strike salaries unpaid"}
+    assert perputhen([A], B) and perputhen([B], C) and not perputhen([A], C)
+    assert not perputhen([A, B], C)
+    # Shumica: me 3 anëtarë mjaftojnë 2 përputhje
+    assert perputhen([A, B, {**A, "summary": "farmers protest fuel prices block"}], B)
     print(f"U krijuan {korrelo()} ngjarje.")
     # Ngjarjet rindërtohen nga e para, ndaj besueshmëria rillogaritet menjëherë
     import scoring
