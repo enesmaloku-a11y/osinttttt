@@ -31,13 +31,15 @@ def lexo(sql):
 artikujt = lexo("SELECT id, url, burimi, titulli, data, gjuha, teksti, teksti_perkthyer, "
                 "perpunuar, hash_sha256, mbledhur_me FROM articles")
 ngjarjet = lexo("SELECT * FROM events")
-vendimet = lexo("SELECT * FROM vendimet").set_index("url_kryesor")
+vendimet = db.vendimet()
 
-# Vendimi i analistit lidhet me URL-në e artikullit më të hershëm të ngjarjes
+# Vendimi i analistit gjendet te cilado URL e ngjarjes, që të mos humbasë kur hyn artikull i ri
 IKONAT = {"e konfirmuar": "✅", "e pakonfirmuar": "❓", "e hedhur poshtë": "❌"}
-ngjarjet["url_kryesor"] = ngjarjet["burimet"].apply(lambda b: json.loads(b)[0])
-ngjarjet["statusi"] = ngjarjet["url_kryesor"].map(vendimet["statusi"]).fillna("e pakonfirmuar")
-ngjarjet["shenimi"] = ngjarjet["url_kryesor"].map(vendimet["shenimi"]).fillna("")
+ngjarjet["url_kryesor"] = ngjarjet["burimet"].apply(
+    lambda b: db.url_i_vendimit(json.loads(b), vendimet))
+ngjarjet["statusi"] = ngjarjet["url_kryesor"].map(
+    lambda u: vendimet.get(u, {}).get("statusi", "e pakonfirmuar"))
+ngjarjet["shenimi"] = ngjarjet["url_kryesor"].map(lambda u: vendimet.get(u, {}).get("shenimi") or "")
 
 artikujt["data"] = pd.to_datetime(artikujt["data"], utc=True, errors="coerce")
 # Të gjitha domenet e GDELT bashkohen në një grup që grafiku të mbetet i lexueshëm

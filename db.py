@@ -110,6 +110,14 @@ def vendimet():
         return {r["url_kryesor"]: dict(r) for r in con.execute("SELECT * FROM vendimet")}
 
 
+def url_i_vendimit(burimet, vendimet):
+    """Çelësi i vendimit për një ngjarje me këto URL burimesh.
+    correlator.py rindërton ngjarjet, ndaj një artikull më i hershëm mund të bëhet burimet[0];
+    vendimi gjendet te cilado URL e ngjarjes (më i riu, nëse ka disa), përndryshe burimet[0]."""
+    me_vendim = [u for u in burimet if u in vendimet]
+    return max(me_vendim, key=lambda u: vendimet[u]["koha"] or "") if me_vendim else burimet[0]
+
+
 def artikuj_te_paperpunuar(limit=100):
     """Artikujt që ende s'janë kaluar nga processor/extractor."""
     with closing(lidhu()) as con:
@@ -209,3 +217,13 @@ def numero_sipas_burimit():
         return con.execute(
             "SELECT burimi, COUNT(*) AS n FROM articles GROUP BY burimi ORDER BY n DESC"
         ).fetchall()
+
+
+if __name__ == "__main__":
+    # Vendimi s'humbet kur një artikull më i hershëm hyn në ngjarje
+    v = {"b": {"koha": "2026-11-20 10:00"}}
+    assert url_i_vendimit(["a", "b"], v) == "b" and url_i_vendimit(["a"], v) == "a"
+    # Dy ngjarje me vendim u bashkuan: fiton vendimi më i ri
+    v["c"] = {"koha": "2026-11-21 09:00"}
+    assert url_i_vendimit(["a", "b", "c"], v) == "c"
+    print("Kontrollet e db.py kaluan.")

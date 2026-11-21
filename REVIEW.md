@@ -80,7 +80,7 @@ Before this branch, the dashboard **did not start outside Windows**, and a live 
 - `articles.rezultati_json` = the keys of `extractor.FUSHAT` (+ `arsyeja` / `demo`).
 - `events.detajet_json`: `rajonale, mediat, gjuhet, aktoret, saktesia_vendit, saktesia_dates, killed/injured/arrested[], arsyetimi[], konteksti[]`.
   Each item in `konteksti`: `{burimi, lloji: "rast_i_ngjashem"|"statistike", titulli, url|null, data, ngjashmeria, arsyeja}`. Each module deletes only its own items (by `burimi`).
-- `vendimet.url_kryesor` = `json.loads(events.burimet)[0]`.
+- `vendimet.url_kryesor` = any URL of the event; the lookup uses `db.url_i_vendimit(burimet, vendimet)` (the URL with the newest decision, otherwise `burimet[0]`).
 - Env: `OSINT_DB` (default `osint.db`), `OLLAMA_URL`, `OLLAMA_MODEL`, `EUREPOC_XLSX`.
 - Order in `main.py`: correlator → kontekst_* → scoring (scoring keeps the other keys in `detajet_json`).
 
