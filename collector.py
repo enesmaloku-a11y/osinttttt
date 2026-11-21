@@ -76,6 +76,14 @@ KOSOVA_EKSTRA = re.compile(
     r"grumbullim\w*\s+i\s+forc\w*\s+serb\w*\s+pran[eë]\s+vij\w*\s+administrativ\w*"
     r")\b", re.I,
 )
+# FSK në mediat serbe shpesh vetëm si "KBS"/"КБС" (Kosovske bezbednosne snage). Vetëm me shkronja
+# të mëdha dhe jo kur teksti flet për Korenë (KBS, televizioni koreano-jugor). Auditi B-4.
+KBS = re.compile(r"\b(?:KBS|КБС)\b")
+KOREJA = re.compile(r"korej|кореј|korea", re.I)
+# Policia e Kosovës: "veri" te një burim zyrtar XK është veriu i Kosovës; me akt dhune pranohet.
+# Jashtë veriut një sulm i zakonshëm mbetet jashtë, si më parë (p.sh. Ferizaj). Auditi B-4.
+VERI = re.compile(r"\bveri\w*", re.I)
+DHUNE_XK = re.compile(r"\b(?:sulm|plagos|vra[sn]|arm[eë]|shpërth|kërcën|rrëmb)\w*", re.I)
 # Formulimi shqip për forca ushtarake serbe që taksonomia s'e kap ("forcat serbe", "ushtarët serbë").
 # shortcut: jeton këtu që të mos preket kercenimet.py para ngrirjes; zhvendose te taksonomia pas saj.
 USHTARAK_SQ = re.compile(r"\b(?:forc|ushtar|xhandarm)\w*(?: (?:ushtarake|speciale|[eë] armatosura))?"
@@ -104,6 +112,12 @@ def _regex_ushtarak_dron():
         return None
 
 
+def kosove(tekst):
+    """Lidhje specifike me Kosovën: emrat dhe vendet, ose KBS/КБС që s'është koreane."""
+    return bool(KOSOVA.search(tekst) or KOSOVA_EKSTRA.search(tekst)
+                or (KBS.search(tekst) and not KOREJA.search(tekst)))
+
+
 def ka_lidhje(burimi, titulli, permbledhja=""):
     info = BURIMET_INFO.get(burimi)
     if info is None:
@@ -112,12 +126,14 @@ def ka_lidhje(burimi, titulli, permbledhja=""):
     if not tekst:
         return False
     if info["vendi"] == "RS" and info["lloji"] == "media":
-        return bool(KOSOVA.search(tekst) or KOSOVA_EKSTRA.search(tekst))
+        return kosove(tekst)
     kercenime = _regex_kercenimet()
     if info["lloji"] == "zyrtar" and info["vendi"] == "RS":
         militar = _regex_ushtarak_dron()
-        return bool(KOSOVA.search(tekst) or KOSOVA_EKSTRA.search(tekst) or (militar and militar.search(tekst)))
-    return bool(KOSOVA.search(tekst) or USHTARAK_SQ.search(tekst) or (kercenime and kercenime.search(tekst)))
+        return bool(kosove(tekst) or (militar and militar.search(tekst)))
+    if info["lloji"] == "zyrtar" and info["vendi"] == "XK" and VERI.search(tekst) and DHUNE_XK.search(tekst):
+        return True
+    return bool(kosove(tekst) or USHTARAK_SQ.search(tekst) or (kercenime and kercenime.search(tekst)))
 
 
 def hosti(url):
@@ -728,10 +744,23 @@ def kontrollo():
         with patch(__name__ + ".KOSOVA_EKSTRA", re.compile(r"(?!)")):
             assert me_ekstra == {b: [ka_lidhje(b, t) for t in titujt] for b in burime_xk}
             para = (sum(ka_lidhje("RTS", t) for t in pozitive), sum(ka_lidhje("RTS", t) for t in negative))
-        print(f"Filtri RS {gjuha}: TP {para[0]} → {len(pozitive)}; FP {para[1]} → 0")
+        print(f"Filtri RS {gjuha}: TP {para[0]} -> {len(pozitive)}; FP {para[1]} -> 0")
     assert ka_lidhje("RTS", "Incident u Zubinom  Potoku")
     assert ka_lidhje("RTS", "Инцидент код Зубиног  Потока")
     assert ka_lidhje("MO Srbije", "Dron nadleteo Gazivode")
+    # Auditi B-4: KBS/КБС si FSK, sulmi ndaj zyrtarit nga Policia; kundërshembujt mbeten jashtë
+    for b, t in (("RTS", "Pripadnici KBS ušli u selo, meštani uznemireni"),
+                 ("Novosti", "КБС распоредиле нове јединице на северу"),
+                 ("Informer", "KBS dobija nove oklopne transportere"),
+                 ("Policia e Kosovës", "Sulmohet zyrtari policor gjatë kryerjes së detyrës në veri")):
+        assert ka_lidhje(b, t), t
+    for b, t in (("RTS", "KBS: Južnokorejski predsednik posetio Japan"),
+                 ("RTS", "Saradnja sa kbs muzičkim festivalom"),
+                 ("Policia e Kosovës", "Aksident trafiku në veri, pa të lënduar"),
+                 ("RTS", "Napad na policajca na severu Srbije, u Subotici"),
+                 ("Informer", "Radoičić osvojio turnir u šahu u Nišu"),
+                 ("RTS", "Vučić: Plate i penzije rastu od januara")):
+        assert not ka_lidhje(b, t), t
     assert GDELT_PAUZA == 10
     nxirr_vjeter, pergatit_vjeter, ruaj_vjeter = nxirr_tekstin, pergatit, db.ruaj_artikull
     try:

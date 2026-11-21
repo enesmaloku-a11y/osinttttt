@@ -19,7 +19,7 @@
 3. **Një URGJENTE "për verifikim":** "Rrezik i lartë, por një burim i vetëm i panjohur (F6). Sistemi nuk thotë vepro, thotë verifiko."
 4. **Ripostimet:** hap një ngjarje që e raportojnë disa media. Te "Pse kjo besueshmëri": *"burime të pavarura: 1 nga 3 media (2 kopje)"*, Admiralty B6. "Tre media që kopjojnë njëra-tjetrën s'janë tre konfirmime. Sistemi s'mashtrohet nga ripostimet."
 5. **Konteksti i jashtëm:** një dezinformim që ngjan me një rast të dokumentuar nga EUvsDisinfo, nëse CSV-ja është vendosur.
-6. **Vendimi i analistit:** konfirmo një ngjarje. "Çdo vendim e mëson modelin e besueshmërisë."
+6. **Vendimi i analistit:** konfirmo një ngjarje. "Vendimi ruhet. Kur mblidhen 80 vendime (20 të konfirmuara, 20 të hedhura poshtë), modeli i besueshmërisë ritrajnohet prej tyre me `trajno.py`."
 7. **Harta:** pamja Kosova → Rajoni. "Rrethi tregon që vendi dihet vetëm në nivel komune ose rajoni. S'pretendojmë saktësi që s'e kemi."
 8. **Raporti ditor:** butoni "Gjenero raportin ditor" → BLUF në një faqe për komandantin.
 9. **Demo live** (nëse ka kohë, ~20 s): te `demo_live.py` shkruaj një postim në forumin demo (p.sh. "dron mbi Gazivodë"). Brenda ~2 sekondave del si kërcënim me kategorinë, rrezikun dhe Admiralty F6. "Forumi është i simuluar. Vetëm postime të ekipit, me rregulla, pa model."
@@ -34,7 +34,7 @@
 
 ## Plani rezervë
 
-- Para prezantimit: `python demo.py`, pastaj `$env:OSINT_DB="demo.db"; streamlit run dashboard.py`. Punon pa Ollama. Pa internet, harta del pa sfond, por skedat e tjera punojnë.
+- Para prezantimit: `python demo.py`, pastaj `$env:OSINT_DB="demo.db"; python -m streamlit run dashboard.py`. Punon pa Ollama. Pa internet, harta del pa sfond, por skedat e tjera punojnë. Nëse `demo.db` ekziston, `demo.py` s'e prek: hape atë ose krijo `demo2.db`.
 - `streamlit run demo_live.py --server.port 8505` punon pa internet dhe pa model.
 - Bëj screenshot-e të çdo hapi, në rast se laptopi ose rrjeti dështon.
 - Mos nis `main.py` gjatë prezantimit: modeli 8B kërkon rreth 1 minutë për artikull.

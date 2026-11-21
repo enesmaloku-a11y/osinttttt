@@ -33,7 +33,7 @@ KONTROLLET = [
     ("main.py (ngrirja)", ["-c", "import os; os.environ['OSINT_NGRIRE'] = '1'; import main, processor; "
                           "processor.ollama_gati = lambda: (_ for _ in ()).throw(AssertionError('s u ngri')); "
                           "main.main(1)"]),
-    ("demo.py", ["demo.py"]),
+    ("demo.py", ["demo.py", "--kontrollo"]),
     ("dashboard.py", ["-c", "from streamlit.testing.v1 import AppTest; "
                          "at = AppTest.from_file('dashboard.py', default_timeout=90).run(); "
                          "assert not at.exception, [x.value for x in at.exception]"]),
@@ -42,11 +42,14 @@ KONTROLLET = [
 
 def main():
     deshtuan = []
+    # Terminali i Windows (cp1252) s'i shtyp dot cirilikun e logjeve: zëvendësoje, mos u rrëzo
+    sys.stdout.reconfigure(errors="replace")
     with tempfile.TemporaryDirectory() as tmp:
         kopja = Path(tmp) / "projekti"
         shutil.copytree(DOSJA, kopja, ignore=shutil.ignore_patterns(
             "venv", ".git", "*.db", "data", "__pycache__", "pipeline.*", "orari.json"))
-        env = {**os.environ, "OSINT_DB": str(Path(tmp) / "kontroll.db"), "PYTHONWARNINGS": "ignore"}
+        env = {**os.environ, "OSINT_DB": str(Path(tmp) / "kontroll.db"), "PYTHONWARNINGS": "ignore",
+               "PYTHONIOENCODING": "utf-8"}  # fëmijët shkruajnë UTF-8, pavarësisht terminalit
         for emri, komanda in KONTROLLET:
             if not (kopja / emri.split()[0]).exists():
                 print(f"  -   {emri} (s'ekziston në këtë degë)")
@@ -56,7 +59,7 @@ def main():
                 print(f"  -   {emri} (niset vetëm në Windows)")
                 continue
             r = subprocess.run([sys.executable, *komanda], cwd=kopja, env=env,
-                               capture_output=True, text=True, timeout=300)
+                               capture_output=True, encoding="utf-8", errors="replace", timeout=300)
             ok = r.returncode == 0
             print(f"  {'OK ' if ok else 'GABIM'} {emri}")
             if not ok:

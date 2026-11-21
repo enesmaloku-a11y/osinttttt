@@ -1,7 +1,14 @@
 """demo.py - Mbush një bazë demo me artikujt SINTETIKË të eval/gold.jsonl, pa Ollama dhe pa rrjet.
 
-Nis me:  python demo.py
-         OSINT_DB=demo.db streamlit run dashboard.py      (PowerShell: $env:OSINT_DB="demo.db")
+Nis me:  python demo.py                 (krijon demo.db në dosjen aktuale)
+         python demo.py --kontrollo     (prova e mbrojtjes, në dosje të përkohshme)
+         python demo.py demo2.db        (shteg tjetër)
+Pastaj (PowerShell):  $env:OSINT_DB="demo.db"; python -m streamlit run dashboard.py
+
+Mbrojtja e bazave: demo.py s'shkruan kurrë te OSINT_DB dhe s'mbishkruan asnjë skedar ekzistues.
+Baza ndërtohet në një skedar të përkohshëm dhe publikohet me emrin e kërkuar vetëm pasi
+kontrollet kalojnë; nëse emri ekziston (edhe nga një ekzekutim paralel), skedari ruhet dhe
+komanda kërkon një shteg tjetër.
 
 Kujdes: rezultati i "modelit" këtu merret nga përgjigjet e sakta të gold set-it (lloji, grupi),
 jo nga modeli. Përmbledhja = titulli i artikullit anglisht të grupit (ose titulli i vet), që
@@ -11,6 +18,7 @@ dashboard-in; numrat e saktësisë jepen nga eval/evaluate.py, jo nga kjo.
 import json
 import os
 import sys
+import tempfile
 from contextlib import closing
 from pathlib import Path
 
@@ -78,19 +86,94 @@ def mbush(gold):
     return n
 
 
+def gjenero(destinacioni):
+    """Ndërton demon në një skedar të përkohshëm dhe e publikon te destinacioni pa mbishkruar asgjë.
+    Kthen (artikuj, ngjarje, urgjente); ngre FileExistsError nëse destinacioni ekziston."""
+    destinacioni = Path(destinacioni).resolve()
+    if destinacioni.name == "osint.db":
+        raise ValueError("demo.py s'e prek osint.db (të dhënat reale)")
+    if destinacioni.exists():
+        raise FileExistsError(destinacioni)
+    fd, tmp = tempfile.mkstemp(prefix=".demo-", suffix=".db", dir=destinacioni.parent)
+    os.close(fd)
+    vjeter, db.DB_PATH = db.DB_PATH, tmp  # OSINT_DB s'preket kurrë
+    try:
+        gold = [json.loads(r) for r in open(GOLD, encoding="utf-8") if r.strip()]
+        n = mbush(gold)
+        ngj = db.ngjarjet()
+        # Kontroll: të paktën një ngjarje u bashkua nga disa gjuhë, dhe asnjë pa burim
+        assert n and all(json.loads(e["burimet"]) for e in ngj)
+        assert any(len(json.loads(e["detajet_json"])["gjuhet"]) > 1 for e in ngj), "s'u bashkua asgjë"
+        prioritetet = [json.loads(e["detajet_json"]).get("prioriteti") for e in ngj]
+        assert {"URGJENTE", "RAPORT"} <= set(prioritetet), prioritetet
+        # Lidhje e fortë: atomike dhe dështon nëse emri u krijua ndërkohë (os.rename në POSIX mbishkruan)
+        os.link(tmp, destinacioni)
+        return len(gold), n, prioritetet.count("URGJENTE")
+    finally:
+        db.DB_PATH = vjeter
+        Path(tmp).unlink(missing_ok=True)
+
+
+def kontrollo_mbrojtjen():
+    """Pa rrjet: krijimi, skedari ekzistues, dështimi gjatë gjenerimit dhe gara me një proces tjetër."""
+    global mbush
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        pune = d / "pune.db"
+        pune.write_bytes(b"baze pune")
+        os.environ["OSINT_DB"] = str(pune)  # demo s'shkruan kurrë te OSINT_DB
+        artikuj, n, urgjente = gjenero(d / "demo.db")
+        assert artikuj and n and urgjente and pune.read_bytes() == b"baze pune"
+        para = (d / "demo.db").read_bytes()
+        for ekzistues in (d / "demo.db", pune):
+            try:
+                gjenero(ekzistues)
+                raise AssertionError("mbishkroi " + ekzistues.name)
+            except FileExistsError:
+                pass
+        assert (d / "demo.db").read_bytes() == para and pune.read_bytes() == b"baze pune"
+        origjinali = mbush
+
+        def deshton(gold):
+            raise RuntimeError("ndërprerje")
+
+        def gare(gold):  # një proces tjetër krijon destinacionin gjatë gjenerimit
+            (d / "gara.db").write_bytes(b"tjetri")
+            return origjinali(gold)
+
+        try:
+            mbush = deshton
+            try:
+                gjenero(d / "pjesshme.db")
+                raise AssertionError("dështimi s'u raportua")
+            except RuntimeError:
+                pass
+            assert not (d / "pjesshme.db").exists()
+            mbush = gare
+            try:
+                gjenero(d / "gara.db")
+                raise AssertionError("gara mbishkroi")
+            except FileExistsError:
+                pass
+            assert (d / "gara.db").read_bytes() == b"tjetri"
+        finally:
+            mbush = origjinali
+        assert not list(d.glob(".demo-*")), "mbeti skedar i përkohshëm"
+    print(f"Kontrollet e demos kaluan: {artikuj} artikuj, {n} ngjarje, {urgjente} urgjente; "
+          f"bazat ekzistuese s'u prekën.")
+
+
 if __name__ == "__main__":
-    if "OSINT_DB" not in os.environ:
-        db.DB_PATH = "demo.db"
-    if Path(db.DB_PATH).name == "osint.db":
-        sys.exit("demo.py s'e prek osint.db (të dhënat reale). Përdor OSINT_DB=demo.db.")
-    Path(db.DB_PATH).unlink(missing_ok=True)
-    gold = [json.loads(r) for r in open(GOLD, encoding="utf-8") if r.strip()]
-    n = mbush(gold)
-    ngj = db.ngjarjet()
-    # Kontroll: të paktën një ngjarje u bashkua nga disa gjuhë, dhe asnjë pa burim
-    assert n and all(json.loads(e["burimet"]) for e in ngj)
-    assert any(len(json.loads(e["detajet_json"])["gjuhet"]) > 1 for e in ngj), "s'u bashkua asgjë"
-    prioritetet = {json.loads(e["detajet_json"]).get("prioriteti") for e in ngj}
-    assert {"URGJENTE", "RAPORT"} <= prioritetet, prioritetet
-    print(f"{db.DB_PATH}: {len(gold)} artikuj sintetikë, {n} ngjarje.\n"
-          f"Hap:  OSINT_DB={db.DB_PATH} streamlit run dashboard.py")
+    if sys.argv[1:] == ["--kontrollo"]:
+        kontrollo_mbrojtjen()
+        sys.exit()
+    shtegu = Path(sys.argv[1] if len(sys.argv) > 1 else "demo.db")
+    try:
+        artikuj, n, urgjente = gjenero(shtegu)
+    except FileExistsError:
+        sys.exit(f"{shtegu.resolve()} ekziston dhe s'u prek. Hape ashtu siç është, ose krijo një të re "
+                 f"me shteg tjetër:  python demo.py demo2.db")
+    except ValueError as e:
+        sys.exit(str(e))
+    print(f"{shtegu.resolve()}: {artikuj} artikuj sintetikë, {n} ngjarje, {urgjente} urgjente.\n"
+          f'Hap (PowerShell):  $env:OSINT_DB="{shtegu.resolve()}"; python -m streamlit run dashboard.py')
