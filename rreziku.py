@@ -117,6 +117,33 @@ def admiralty(det, statusi, dez):
     return {"burimi": burimi, "informacioni": info, "kodi": f"{burimi}{info}"}
 
 
+def ndikimi_21(e, det, pike, b, statusi):
+    """Lista e 21 kategorive: kategoria kryesore dhe shtesë, ndikimi, urgjenca dhe verifikimi urgjent.
+    Rregulla paraprake (treguesit i miraton personi përgjegjës); ndikimi s'varet nga besueshmëria."""
+    kat = kercenimet.kategorite_21(f"{e.get('titulli') or ''} {e.get('vendi') or ''}", det.get("kategoria"),
+                                   det.get("aktori"), det.get("shenjestrat"))
+    k, i = maks(det.get("killed")), maks(det.get("injured"))
+    if i >= 10 and 14 not in kat:
+        kat.append(14)  # ngjarje me shumë të lënduar = edhe krizë shëndetësore
+    esenciale = len(kercenimet.SHERBIME_ESENCIALE & set(kat))
+    if not kat and not k and not i:
+        ndikimi, pse = "i papërcaktuar", "s'ka shenja të mjaftueshme për asnjë kategori"
+    elif k >= 3 or i >= 10 or (esenciale >= 2 and pike >= PRAGU_LARTE):
+        ndikimi, pse = "kritik", f"{k} të vdekur, {i} të plagosur, {esenciale} shërbime esenciale, rreziku {pike}"
+    elif k >= 1 or i >= 3 or pike >= PRAGU_LARTE:
+        ndikimi, pse = "i lartë", f"{k} të vdekur, {i} të plagosur, rreziku {pike}"
+    elif i >= 1 or pike >= PRAGU_MESEM:
+        ndikimi, pse = "mesatar", f"{i} të plagosur, rreziku {pike}"
+    else:
+        ndikimi, pse = "i ulët", f"rreziku {pike}, pa viktima"
+    # Ndikim potencialisht i rëndë me prova të kufizuara: verifikim urgjent
+    verifikim = (ndikimi in ("kritik", "i lartë") and statusi != "e konfirmuar"
+                 and (b is None or b < B_LARTE))
+    return {"kategorite": kat, "ndikimi": ndikimi, "pse": pse,
+            "urgjenca": ("afatgjatë" if kercenimet.KATEGORITE_21[kat[0]]["afatgjate"] else "në zhvillim")
+            if kat else "e papërcaktuar", "verifikim_urgjent": verifikim}
+
+
 def vlereso(e, det, *, sot=None, te_tjerat=(), vendimet=None, dez=None):
     """Kthen {"rreziku", "prioriteti", "admiralty"} për një ngjarje (s'e ndryshon det).
     te_tjerat: [(id, kategoria, data, vendi_kanonik)] për trendin; sot: "YYYY-MM-DD" (testet/eval)."""
@@ -181,7 +208,8 @@ def vlereso(e, det, *, sot=None, te_tjerat=(), vendimet=None, dez=None):
     elif statusi == "e hedhur poshtë":
         arsyet.append("ARKIV: analisti e hodhi poshtë")
     return {"rreziku": {"pike": pike, "niveli": niveli, "arsyet": arsyet},
-            "prioriteti": prioriteti, "admiralty": admiralty(det, statusi, dez or {})}
+            "prioriteti": prioriteti, "admiralty": admiralty(det, statusi, dez or {}),
+            "v21": ndikimi_21(e, det, pike, b, statusi)}
 
 
 def raste_dezinformimi():
@@ -311,7 +339,20 @@ if __name__ == "__main__":
         assert kolona == sorted(kolona)
     assert vlereso({}, {}) == {"rreziku": {"pike": 8, "niveli": "i ulët", "arsyet": [
         "kategoria: tjeter (rrezikshmëri bazë 1/5) → +8", "rreziku 8/100 → i ulët"]},
-        "prioriteti": "ARKIV", "admiralty": {"burimi": "F", "informacioni": 6, "kodi": "F6"}}
+        "prioriteti": "ARKIV", "admiralty": {"burimi": "F", "informacioni": 6, "kodi": "F6"},
+        "v21": {"kategorite": [], "ndikimi": "i papërcaktuar", "pse": "s'ka shenja të mjaftueshme për asnjë kategori",
+                "urgjenca": "e papërcaktuar", "verifikim_urgjent": False}}
+    # Lista e 21 kategorive: ndikimi dhe verifikimi urgjent
+    v = [vlereso(e, det, sot="2026-11-21", te_tjerat=tt, vendimet=VEND, dez=dez)["v21"]
+         for e, det, tt, dez, _ in RASTET]
+    assert v[0]["kategorite"][0] == 4 and v[0]["ndikimi"] == "i lartë" and not v[0]["verifikim_urgjent"]
+    assert v[1]["kategorite"][0] == 1 and v[1]["ndikimi"] == "i lartë"  # 1 i vdekur, 3 të plagosur
+    assert v[2]["ndikimi"] == "i lartë" and v[2]["verifikim_urgjent"]  # Telegram 0.40 -> verifikim urgjent
+    assert v[11]["ndikimi"] == "mesatar" and v[11]["urgjenca"] == "në zhvillim"  # parada: 54
+    assert vlereso({}, {"killed": [3]})["v21"]["ndikimi"] == "kritik"  # viktimat mjaftojnë edhe pa kategori
+    assert vlereso({}, {"kategoria": "grupe_te_armatosura", "injured": [12]})["v21"]["kategorite"] == [1, 14]
+    assert vlereso({}, {"kategoria": "grupe_te_armatosura", "injured": [12]})["v21"]["ndikimi"] == "kritik"
+    assert vlereso({}, {"kategoria": "struktura_paralele"})["v21"]["urgjenca"] == "afatgjatë"
     for kat in ("dezinformim", "kufi_kontrabande", "tjeter"):  # një faktor i vetëm s'mjafton për "i lartë"
         for x in ({"shenjestrat": ["fsk"]}, {"aktori": "shteti_serb"}, {"killed": [5]}):
             assert vlereso({}, {"kategoria": kat, **x})["rreziku"]["niveli"] != "i lartë"
