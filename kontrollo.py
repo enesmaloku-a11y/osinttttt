@@ -25,6 +25,13 @@ KONTROLLET = [
     ("kontekst_kibernetik.py", ["-c", "import kontekst_kibernetik as k; k.kontrollet()"]),
     ("eval/evaluate.py", ["-c", "import sys; sys.path.insert(0, 'eval'); import evaluate as e; "
                     "getattr(e, 'kontrollo', lambda: None)(); e.lexo_gold()"]),
+    ("kercenimet.py", ["kercenimet.py"]),
+    ("rreziku.py", ["rreziku.py"]),
+    ("raporti.py", ["raporti.py", "2026-11-18"]),
+    # Me OSINT_NGRIRE=1 main() del para çdo hapi (as Ollama, as rrjet)
+    ("main.py (ngrirja)", ["-c", "import os; os.environ['OSINT_NGRIRE'] = '1'; import main, processor; "
+                          "processor.ollama_gati = lambda: (_ for _ in ()).throw(AssertionError('s u ngri')); "
+                          "main.main(1)"]),
     ("demo.py", ["demo.py"]),
     ("dashboard.py", ["-c", "from streamlit.testing.v1 import AppTest; "
                          "at = AppTest.from_file('dashboard.py', default_timeout=90).run(); "
@@ -40,7 +47,7 @@ def main():
             "venv", ".git", "*.db", "data", "__pycache__", "pipeline.*", "orari.json"))
         env = {**os.environ, "OSINT_DB": str(Path(tmp) / "kontroll.db"), "PYTHONWARNINGS": "ignore"}
         for emri, komanda in KONTROLLET:
-            if not (kopja / emri).exists():
+            if not (kopja / emri.split()[0]).exists():
                 print(f"  -   {emri} (s'ekziston në këtë degë)")
                 continue
             if emri == "dashboard.py" and os.name != "nt":

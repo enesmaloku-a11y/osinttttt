@@ -11,4 +11,10 @@ CLAUDE.md
 # Skedarët e ekzekutimit lokal (ekzekuto.py)
 pipeline.log
 pipeline.lock
+# Ngrirja e pipeline-it gjatë etiketimit (raporti.ngrire)
+pipeline.ngrire
+# Variablat lokale të mjedisit
+.env
 orari.json
+# Raportet ditore (raporti.py): kanë titujt e lajmeve, mbeten lokalisht
+raportet/
