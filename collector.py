@@ -80,7 +80,8 @@ def _robots(baza):
     req = urllib.request.Request(f"{baza}/robots.txt", headers={"User-Agent": AGENT})
     try:
         with urllib.request.urlopen(req, timeout=10) as r:
-            return lexo_robots(r.status, r.read().decode("utf-8", "ignore").splitlines())
+            # RFC 9309: lexohen të paktën 500 KiB; më shumë s'lexojmë (server armiqësor/i gabuar)
+            return lexo_robots(r.status, r.read(512_000).decode("utf-8", "ignore").splitlines())
     except urllib.error.HTTPError as e:
         return lexo_robots(e.code)
     except Exception:
@@ -90,6 +91,8 @@ def _robots(baza):
 def lejohet(url):
     """True nëse robots.txt e lejon shkarkimin e faqes."""
     u = urlsplit(url)
+    if u.scheme not in ("http", "https") or not u.netloc:
+        return False  # p.sh. file:// ose URL e prishur nga GDELT/RSS
     return _robots(f"{u.scheme}://{u.netloc}").can_fetch(ROBOT, url)
 
 
@@ -232,6 +235,7 @@ def kontrollet():
                            "User-agent: osint-prototype", "Disallow: /lajme/sekret"])
     assert rp.can_fetch(ROBOT, "https://x.com/lajme/1")
     assert not rp.can_fetch(ROBOT, "https://x.com/lajme/sekret-2")
+    assert not lejohet("file:///etc/passwd") and not lejohet("ftp://x.com/a") and not lejohet("http://")
     assert lexo_robots(404).can_fetch(ROBOT, "https://x.com/a")       # pa robots.txt = lejohet
     assert not lexo_robots(503).can_fetch(ROBOT, "https://x.com/a")   # server i rënë = ndalohet
     assert not lexo_robots(None).can_fetch(ROBOT, "https://x.com/a")  # i paarritshëm = ndalohet
