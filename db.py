@@ -1,9 +1,10 @@
 """db.py - Ruajtja në SQLite: artikujt dhe ngjarjet."""
 import json
+import os
 import sqlite3
 from contextlib import closing
 
-DB_PATH = "osint.db"
+DB_PATH = os.environ.get("OSINT_DB", "osint.db")  # p.sh. OSINT_DB=demo.db për demon
 
 # Skema: emrat e kolonave pa "ë" që të jenë të lehta për SQL.
 SKEMA = """
@@ -56,10 +57,16 @@ def lidhu():
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
     con.executescript(SKEMA)
-    # Migrim i butë: bazat e vjetra s'e kanë kolonën e hash-it
+    # Migrim i butë (vetëm shtim kolonash): bazat e vjetra s'kanë hash-in dhe tekstin bruto
     kolonat = {r["name"] for r in con.execute("PRAGMA table_info(articles)")}
     if "hash_sha256" not in kolonat:
         con.execute("ALTER TABLE articles ADD COLUMN hash_sha256 TEXT")
+        con.commit()
+    if "raw_text" not in kolonat:
+        # raw_text = teksti siç u mblodh; processor.py e mbishkruan vetëm 'teksti'.
+        # Artikujt e papërkthyer kanë ende tekstin bruto te 'teksti'; të përkthyerit s'e kanë më.
+        con.execute("ALTER TABLE articles ADD COLUMN raw_text TEXT")
+        con.execute("UPDATE articles SET raw_text = teksti WHERE teksti_perkthyer IS NULL")
         con.commit()
     return con
 
@@ -75,22 +82,21 @@ def ruaj_artikull(url, burimi, titulli, data, gjuha, teksti, hash_sha256=None):
     hash_sha256 = gjurma e tekstit bruto kur u mblodh (prova nëse faqja ndryshon më vonë)."""
     with closing(lidhu()) as con, con:
         cur = con.execute(
-            "INSERT OR IGNORE INTO articles (url, burimi, titulli, data, gjuha, teksti, "
-            "hash_sha256) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (url, burimi, titulli, data, gjuha, teksti, hash_sha256),
+            "INSERT OR IGNORE INTO articles (url, burimi, titulli, data, gjuha, teksti, raw_text, "
+            "hash_sha256) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (url, burimi, titulli, data, gjuha, teksti, teksti, hash_sha256),
         )
         return cur.rowcount == 1
 
 
 def plotreso_hash(funksioni_hash):
-    """Hash për artikujt e vjetër që s'e kanë. Vetëm ku teksti është ende bruto
-    (pa përkthim), sepse processor.py e pastron dhe e pret tekstin. Kthen numrin."""
+    """Hash për artikujt e vjetër që s'e kanë, nga teksti bruto (raw_text). Kthen numrin."""
     with closing(lidhu()) as con, con:
-        rreshtat = con.execute("SELECT id, teksti FROM articles WHERE hash_sha256 IS NULL "
-                               "AND teksti_perkthyer IS NULL AND teksti IS NOT NULL").fetchall()
+        rreshtat = con.execute("SELECT id, raw_text FROM articles WHERE hash_sha256 IS NULL "
+                               "AND raw_text IS NOT NULL").fetchall()
         for r in rreshtat:
             con.execute("UPDATE articles SET hash_sha256 = ? WHERE id = ?",
-                        (funksioni_hash(r["teksti"]), r["id"]))
+                        (funksioni_hash(r["raw_text"]), r["id"]))
         return len(rreshtat)
 
 
@@ -107,6 +113,14 @@ def vendimet():
     """Kthen {url_kryesor: {statusi, shenimi, koha}}."""
     with closing(lidhu()) as con:
         return {r["url_kryesor"]: dict(r) for r in con.execute("SELECT * FROM vendimet")}
+
+
+def url_i_vendimit(burimet, vendimet):
+    """Çelësi i vendimit për një ngjarje me këto URL burimesh.
+    correlator.py rindërton ngjarjet, ndaj një artikull më i hershëm mund të bëhet burimet[0];
+    vendimi gjendet te cilado URL e ngjarjes (më i riu, nëse ka disa), përndryshe burimet[0]."""
+    me_vendim = [u for u in burimet if u in vendimet]
+    return max(me_vendim, key=lambda u: vendimet[u]["koha"] or "") if me_vendim else burimet[0]
 
 
 def artikuj_te_paperpunuar(limit=100):
@@ -208,3 +222,30 @@ def numero_sipas_burimit():
         return con.execute(
             "SELECT burimi, COUNT(*) AS n FROM articles GROUP BY burimi ORDER BY n DESC"
         ).fetchall()
+
+
+if __name__ == "__main__":
+    # Vendimi s'humbet kur një artikull më i hershëm hyn në ngjarje
+    v = {"b": {"koha": "2026-11-20 10:00"}}
+    assert url_i_vendimit(["a", "b"], v) == "b" and url_i_vendimit(["a"], v) == "a"
+    # Dy ngjarje me vendim u bashkuan: fiton vendimi më i ri
+    v["c"] = {"koha": "2026-11-21 09:00"}
+    assert url_i_vendimit(["a", "b", "c"], v) == "c"
+    # Migrimi: bazë e vjetër pa raw_text -> kolona shtohet, të papërkthyerit marrin tekstin
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        DB_PATH = f"{d}/vjeter.db"
+        with closing(sqlite3.connect(DB_PATH)) as c:
+            c.execute("CREATE TABLE articles (id INTEGER PRIMARY KEY, url TEXT UNIQUE, burimi TEXT, "
+                      "titulli TEXT, data TEXT, gjuha TEXT, teksti TEXT, teksti_perkthyer TEXT, "
+                      "perpunuar INTEGER DEFAULT 0, rezultati_json TEXT, mbledhur_me TEXT)")
+            c.executemany("INSERT INTO articles (url, burimi, data, gjuha, teksti, teksti_perkthyer) "
+                          "VALUES (?, 'x', '2026-11-20', 'sq', ?, ?)",
+                          [("a", "bruto", None), ("b", "e pastruar", "translated")])
+            c.commit()
+        ruaj_artikull("c", "x", "t", "2026-11-21", "sq", "i ri")
+        ruaj_perkthimin(3, "i ri i pastruar", "new")
+        with closing(lidhu()) as c:
+            raw = dict(c.execute("SELECT url, raw_text FROM articles").fetchall())
+        assert raw == {"a": "bruto", "b": None, "c": "i ri"}, raw  # përkthimi s'e prek raw_text
+    print("Kontrollet e db.py kaluan.")
