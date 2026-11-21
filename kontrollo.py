@@ -16,6 +16,7 @@ DOSJA = Path(__file__).resolve().parent
 # (skedari i modulit, argumentet për python). Modulet që mungojnë në këtë degë anashkalohen.
 KONTROLLET = [
     ("db.py", ["db.py"]),
+    ("collector.py", ["collector.py", "--kontrollo"]),
     ("extractor.py", ["extractor.py", "0"]),
     ("correlator.py", ["correlator.py"]),
     ("scoring.py", ["scoring.py"]),
