@@ -171,6 +171,12 @@ with tab_ngj:
                     st.write("**Pse kjo besueshmëri:**")
                     for a in det["arsyetimi"]:
                         st.markdown(f"- {a}")
+                # Raste të ngjashme nga burime të jashtme (kontekst_*.py): sugjerim, jo provë
+                if det.get("konteksti"):
+                    st.write("**Konteksti (raste të ngjashme):**")
+                for x in det.get("konteksti") or []:
+                    emri = f"[{x['titulli']}]({x['url']})" if x.get("url") else x["titulli"]
+                    st.markdown(f"- {x['burimi']}: {emri} ({x.get('arsyeja') or ''})")
                 st.write("**Burimet:**")
                 for u in json.loads(e["burimet"]):
                     st.markdown(f"- [{u}]({u})")
