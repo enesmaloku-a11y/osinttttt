@@ -1,9 +1,10 @@
 """db.py - Ruajtja në SQLite: artikujt dhe ngjarjet."""
 import json
+import os
 import sqlite3
 from contextlib import closing
 
-DB_PATH = "osint.db"
+DB_PATH = os.environ.get("OSINT_DB", "osint.db")  # p.sh. OSINT_DB=demo.db për demon
 
 # Skema: emrat e kolonave pa "ë" që të jenë të lehta për SQL.
 SKEMA = """

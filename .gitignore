@@ -12,3 +12,5 @@ CLAUDE.md
 pipeline.log
 pipeline.lock
 orari.json
+# Konfigurimi lokal (shih .env.example)
+.env
