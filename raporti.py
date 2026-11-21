@@ -6,8 +6,10 @@ Nis me:  python raporti.py              (raporti i sotëm te raportet/raporti_YY
 Merr ngjarjet e 7 ditëve deri te data. Ngjarjet që analisti i hodhi poshtë s'futen.
 Sistemi sugjeron; çdo vendim e merr analisti. Dosja raportet/ s'shkon në Git.
 """
+import html
 import importlib
 import json
+import os
 import re
 import sys
 from collections import Counter
@@ -19,6 +21,7 @@ import kercenimet
 import patterns
 
 DOSJA = Path(__file__).resolve().parent / "raportet"
+NGRIRJA = Path(__file__).resolve().parent / "pipeline.ngrire"
 DITET = 7
 MAKS_URGJENTE, MAKS_RAPORTE, MAKS_BURIME = 10, 15, 10
 RENDI = {"URGJENTE": 0, "RAPORT": 1, "MONITORIM": 2, "ARKIV": 3}
@@ -26,6 +29,19 @@ B_VEPRIM = 0.80  # si te rreziku.py: nën këtë, URGJENTE do të thotë "për v
 
 
 # ---------------- Ndihmës (i përdor edhe dashboard.py) ----------------
+def ngrire():
+    """Pipeline-i i ngrirë gjatë etiketimit: ekziston pipeline.ngrire pranë kodit ose OSINT_NGRIRE=1.
+    E kontrollojnë main.py (del pa bërë asgjë) dhe dashboard.py (butonat e ekzekutimit çaktivizohen)."""
+    return NGRIRJA.exists() or os.environ.get("OSINT_NGRIRE") == "1"
+
+
+def siguro(t):
+    """Tekst për HTML-në e folium-it: escape, plus \\, ` dhe $ sepse folium e fut në një JS template
+    literal (pa këto, "\\u{...}" ose "${...}" në një titull prish hartën)."""
+    return (html.escape(str(t or "")).replace("\\", "&#92;")
+            .replace("`", "&#96;").replace("$", "&#36;"))
+
+
 def rresht(t, maks=200):
     """Tekst në një rresht, pa ndryshime të tjera (për HTML dhe grafikë, ku escape-i bëhet veçmas)."""
     return re.sub(r"\s+", " ", str(t or "")).strip()[:maks]
@@ -281,10 +297,20 @@ if __name__ == "__main__":
         assert "1 ngjarje i hodhi poshtë analisti" in r and "1 ngjarje pa vlerësim rreziku" in r
         assert "javascript:" not in r and "Trupa pranë vijës \\| rreshti ri" in r
         assert pastro("0.4 < 0.8 [x](y)") == "0.4 \\< 0.8 \\[x\\](y)" and rresht("a\n  b") == "a b"
+        assert siguro('<b>"x"</b> \\u{41} `${1}`') == \
+            "&lt;b&gt;&quot;x&quot;&lt;/b&gt; &#92;u{41} &#96;&#36;{1}&#96;"
+        assert not any(c in siguro("\\`$<>\"'") for c in "\\`$<>\"'") and siguro(None) == ""
         assert "Për verifikim, jo për veprim" in r and "e konfirmoi Policia" in r and "Admiralty B2" in r
         shtegu = gjenero("2026-11-18", tmp)
         assert shtegu.name == "raporti_2026-11-18.md"
         assert shtegu.read_text(encoding="utf-8").startswith("# Raporti ditor OSINT: 18.11.2026")
         db.DB_PATH = origjinali
+    vjeter = os.environ.pop("OSINT_NGRIRE", None)
+    assert not ngrire() or NGRIRJA.exists()
+    os.environ["OSINT_NGRIRE"] = "1"
+    assert ngrire()
+    os.environ.pop("OSINT_NGRIRE")
+    if vjeter is not None:
+        os.environ["OSINT_NGRIRE"] = vjeter
     print("Kontrollet kaluan.")
     print(f"Raporti: {gjenero(sys.argv[1] if len(sys.argv) > 1 else None)}")

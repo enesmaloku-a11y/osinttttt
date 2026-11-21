@@ -20,6 +20,7 @@ import extractor
 import patterns
 import processor
 import scoring
+from raporti import ngrire
 
 
 def opsional(emri, funksioni):
@@ -38,6 +39,10 @@ def opsional(emri, funksioni):
 
 
 def main(n):
+    # Ngrirja gjatë etiketimit: as Task Scheduler-i as një terminal tjetër s'e nis pipeline-in
+    if ngrire():
+        print("Pipeline-i është i ngrirë (etiketim): s'u bë asgjë.")
+        return
     # Kontrollo para mbledhjes, që të mos presim për asgjë nëse modeli s'punon
     if not processor.ollama_gati():
         sys.exit("Ollama nuk po punon. Nise me 'ollama serve' dhe provo përsëri.")

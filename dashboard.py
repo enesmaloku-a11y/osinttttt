@@ -4,7 +4,6 @@ Nis me:  streamlit run dashboard.py
 Skedat: Urgjente dhe Raporte (sipas prioritetit të rreziku.py), Ngjarjet (harta, kronologjia),
 Kërcënimet (taksonomia), Burimet, Vlerësimi, Artikujt, Ekzekutimi.
 """
-import html
 import json
 import sqlite3
 from collections import Counter
@@ -46,9 +45,7 @@ def lexo_json(shtegu):
         return None
 
 
-def siguro(t):
-    """Tekst për HTML-në e folium-it: escape, plus ` dhe $ sepse folium e fut në një JS template literal."""
-    return html.escape(str(t or "")).replace("`", "&#96;").replace("$", "&#36;")
+siguro = raporti.siguro  # escape për popup-et e folium-it; testohet te raporti.py
 
 
 def perqind(v):
@@ -74,7 +71,12 @@ artikujt["grupi"] = artikujt["burimi"].where(~artikujt["burimi"].str.startswith(
 # ---------------- Sidebar ----------------
 # Butoni kryesor në krye të sidebar-it, që të duket gjithmonë (edhe në ekran të vogël)
 st.sidebar.header("Pipeline-i")
-if st.sidebar.button("▶️ Ekzekuto tani", type="primary", key="ekz_sidebar", use_container_width=True):
+# Gjatë etiketimit (pipeline.ngrire ose OSINT_NGRIRE=1) asgjë s'nis pipeline-in nga dashboard-i
+ngrire = raporti.ngrire()
+if ngrire:
+    st.sidebar.warning("Etiketim në vazhdim: pipeline-i është i ngrirë. Ekzekutimi dhe orari janë çaktivizuar.")
+if st.sidebar.button("▶️ Ekzekuto tani", type="primary", key="ekz_sidebar", use_container_width=True,
+                     disabled=ngrire):
     if ekzekuto.po_punon():
         st.sidebar.warning("Një ekzekutim po punon tashmë.")
     else:
@@ -469,7 +471,7 @@ with tab_ekz:
     # Butoni është gjithmonë aktiv; bllokimi te ekzekuto.py s'lejon dy ekzekutime njëkohësisht
     if ekzekuto.po_punon():
         st.info("⏳ Pipeline-i po punon tani. Shiko log-un më poshtë; kur të mbarojë, kliko 'Rifresko të dhënat'.")
-    if st.button("▶️ Ekzekuto tani", type="primary"):
+    if st.button("▶️ Ekzekuto tani", type="primary", disabled=ngrire):
         if ekzekuto.po_punon():
             st.warning("Një ekzekutim po punon tashmë. Prit sa të mbarojë, pastaj provo sërish.")
         else:
@@ -486,7 +488,7 @@ with tab_ekz:
     if aktuale:
         st.caption(f"Aktiv: çdo {aktuale['ore']} orë, {aktuale['n']} artikuj. Punon edhe kur dashboard-i "
                    "është i mbyllur, por kompjuteri duhet të jetë ndezur dhe Ollama duke punuar.")
-    if st.button("Ruaj orarin"):
+    if st.button("Ruaj orarin", disabled=ngrire):
         ore = opsionet[zgjedhja]
         ok, mesazhi = ekzekuto.vendos_orarin(ore, n) if ore else ekzekuto.hiq_orarin()
         (st.success if ok else st.error)(("Orari u ruajt." if ore else "Orari automatik u hoq.")
