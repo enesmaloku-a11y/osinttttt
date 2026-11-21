@@ -50,6 +50,7 @@ FEEDS = {
 }
 
 BURIMET_INFO = {
+    "N1 Serbia": dict(domeni="n1info.rs", gjuha="sr", lloji="media", vendi="RS"),
     "Hibrid.info": dict(domeni="hibrid.info", gjuha="sq", lloji="media", vendi="XK"),
     "Policia e Kosovës": dict(domeni="kosovopolice.com", gjuha="sq", lloji="zyrtar", vendi="XK"),
     "RTS": dict(domeni="rts.rs", gjuha="sr", lloji="media", vendi="RS"),
@@ -287,11 +288,31 @@ def zbulo_gjuhen(teksti):
 
 
 def data_iso(entry):
-    """Data e publikimit nga RSS; nëse mungon, përdor kohën e tanishme."""
+    """Data për renditje. Në mungesë të datës nga burimi përdoret koha e mbledhjes."""
     t = entry.get("published_parsed") or entry.get("updated_parsed")
-    if t:
-        return datetime(*t[:6], tzinfo=timezone.utc).isoformat()
+    try:
+        if t:
+            return datetime(*t[:6], tzinfo=timezone.utc).isoformat()
+    except (TypeError, ValueError):
+        pass
     return datetime.now(timezone.utc).isoformat()
+
+
+def data_e_publikimit(entry):
+    """Kthen vetëm publikimin e deklaruar. Ora kërkon një zonë kohore te burimi."""
+    bruto, parsed = entry.get("published"), entry.get("published_parsed")
+    if not isinstance(bruto, str) or not parsed:
+        return None
+    try:
+        data = datetime(*parsed[:6], tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+    if re.search(r"\d{1,2}:\d{2}(?::\d{2}(?:[.,]\d+)?)?\s*(?:Z|[+-]\d{2}:?\d{2}|UTC|UT|GMT|[ECMP][SD]T|CES?T)\b",
+                 bruto, re.I):
+        return data.isoformat()
+    if re.search(r"\d{4}-\d{2}-\d{2}|\d{1,2}\s+[a-z]{3,9}\s+\d{2,4}", bruto, re.I):
+        return data.date().isoformat()
+    return None
 
 
 def pastro_html(s):
@@ -326,15 +347,15 @@ def gjurma(teksti):
     return hashlib.sha256((teksti or "").encode("utf-8")).hexdigest()
 
 
-def verifiko(url, hash_i_ruajtur, teksti_bruto=None):
+def verifiko(url, hash_i_ruajtur, teksti_bruto=None, *, lloji_tekstit=None):
     """Rishkarkon faqen dhe e krahason me hash-in e ruajtur kur u mblodh.
     Faqet shtojnë shpesh reklama/"më të lexuarat", ndaj hash-i ndryshon edhe kur lajmi s'ka
     ndryshuar. Nëse kemi ende tekstin bruto, tregojmë sa rreshta të lajmit mungojnë."""
-    if domeni_i_lejuar(url) in {info["domeni"] for info in BURIMET_INFO.values()}:
-        return "krahasimi i faqes nuk zbatohet për përmbajtjen nga RSS"
+    if lloji_tekstit != "plote" or not hash_i_ruajtur:
+        return "krahasimi kërkon një kopje të mëparshme të tekstit të plotë"
     teksti = nxirr_tekstin(url)
     if not teksti:
-        return "s'u arrit (fshirë ose offline)"
+        return "teksti i plotë nuk u arrit për krahasim"
     if gjurma(teksti) == hash_i_ruajtur:
         return "i pandryshuar"
     if not teksti_bruto:
@@ -346,7 +367,7 @@ def verifiko(url, hash_i_ruajtur, teksti_bruto=None):
     return f"i ndryshuar: {len(mungojne)} nga {len(rreshtat)} rreshta të lajmit mungojnë ose ndryshuan"
 
 
-def pergatit(burimi, url, titulli, data, permbledhja=""):
+def pergatit(burimi, url, titulli, data, permbledhja="", published_at=None):
     """Merr tekstin e plotë dhe gjuhën; kthen dict gati për db (ose None)."""
     # Përmbledhja e RSS përdoret kur teksti i plotë mungon.
     teksti_plote = nxirr_tekstin(url)
@@ -363,7 +384,7 @@ def pergatit(burimi, url, titulli, data, permbledhja=""):
         gjuha = "sr"
     return dict(url=url, burimi=burimi, titulli=titulli, data=data,
                 gjuha=gjuha, teksti=teksti,
-                hash_sha256=gjurma(teksti),
+                hash_sha256=gjurma(teksti), published_at=published_at,
                 _teksti_lloji=("plote" if teksti_plote else
                                "permbledhje" if permbledhje_rss else "deshtoi"))
 
@@ -377,7 +398,7 @@ def ruaj_te_gjitha(detyrat, me_statistika=False):
             if art:
                 lloji = art.pop("_teksti_lloji", "deshtoi")
                 tekstet[lloji] += 1
-                if db.ruaj_artikull(**art):
+                if db.ruaj_artikull(**art, lloji_tekstit=lloji):
                     te_reja += 1
             else:
                 tekstet["deshtoi"] += 1
@@ -395,7 +416,7 @@ def mblidh_rss(burimi, feed_url):
     if not feed.version:
         print(f"  {burimi}: përgjigjja nuk ishte RSS ose Atom")
         return 0
-    detyrat, filtruar, jashte = [], 0, 0
+    detyrat, pare, filtruar, jashte = [], set(), 0, 0
     for e in feed.entries:
         linku = e.get("link")
         url = urljoin(feed_url, linku) if isinstance(linku, str) and linku else None
@@ -412,8 +433,10 @@ def mblidh_rss(burimi, feed_url):
         if not lejohet(url, domeni):
             jashte += 1
             continue
-        if not db.ekziston_url(url):
-            detyrat.append((burimi, url, titulli, data_iso(e), permbledhja))
+        if url not in pare:
+            pare.add(url)
+            if not db.ekziston_url(url):
+                detyrat.append((burimi, url, titulli, data_iso(e), permbledhja, data_e_publikimit(e)))
     teprica = 0
     if burimi in BURIMET_INFO:
         detyrat.sort(key=lambda d: d[3], reverse=True)
@@ -609,12 +632,21 @@ def mblidh_te_gjitha():
 def kontrollo():
     global _shkarko, nxirr_tekstin, pergatit, shkarko, ruaj_te_gjitha
     import scoring
-    import inspect
     import contextlib
     import io
     from unittest.mock import patch
 
     import kercenimet
+
+    assert data_e_publikimit({}) is None
+    assert data_e_publikimit({"updated": "2026-11-21T10:00:00Z", "updated_parsed": (2026, 11, 21, 10, 0, 0)}) is None
+    assert data_e_publikimit({"published": "2026-11-21", "published_parsed": (2026, 11, 21, 0, 0, 0)}) == "2026-11-21"
+    assert data_e_publikimit({"published": "Sat, 21 Nov 2026 10:00:00 +0100",
+                              "published_parsed": (2026, 11, 21, 9, 0, 0)}) == "2026-11-21T09:00:00+00:00"
+    with patch(__name__ + ".nxirr_tekstin", side_effect=AssertionError("Përmbledhja s'krahasohet me faqen")):
+        assert "tekst" in verifiko("https://www.rts.rs/a", gjurma("përmbledhje"), lloji_tekstit="permbledhje")
+    with patch(__name__ + ".nxirr_tekstin", return_value="teksti i plotë"):
+        assert verifiko("https://www.rts.rs/a", gjurma("teksti i plotë"), lloji_tekstit="plote") == "i pandryshuar"
 
     for s in ("Kosovo", "Косово", "Космет", "Metohija", "Zubin Potok", "Jarinje", "Јариње", "Prištini",
               "KFOR", "FSK", "Mitrovica", "Приштина", "Leposavić"):
@@ -669,7 +701,7 @@ def kontrollo():
             hyrjet = [dict(link=f"https://www.rts.rs/a{i}", title="Dron iznad Gazivoda" if i < n_mira
                            else "Protest u Beogradu", summary="", published_parsed=(2026, 11, 1 + i, 0, 0, 0))
                       for i in range(40)]
-            feedparser.parse = lambda _t, h=hyrjet: type("F", (), {"version": "rss20", "entries": h})()
+            feedparser.parse = lambda _t, h=hyrjet: type("F", (), {"version": "rss20", "entries": h + h[:3]})()
             shkarko = lambda *_a, **_k: b"<rss/>"
             db.ekziston_url = lambda _u: False
             marre = []
@@ -798,7 +830,6 @@ def kontrollo():
         assert not set(termat) & set(ZGJERIMI)
         assert all(sum(c.isalpha() for c in t) >= 4 for t in termat)
         assert all(f'"{t}"' in tematike[1] for t in termat if " " in t or "-" in t)
-    assert len(inspect.signature(verifiko).parameters) == 3
     ekziston_vjeter = db.ekziston_url
     try:
         db.ekziston_url = lambda _url: False

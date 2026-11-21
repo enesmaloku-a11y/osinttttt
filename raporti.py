@@ -19,13 +19,14 @@ from pathlib import Path
 import db
 import kercenimet
 import patterns
+import rreziku as motor_rreziku
 
 DOSJA = Path(__file__).resolve().parent / "raportet"
 NGRIRJA = Path(__file__).resolve().parent / "pipeline.ngrire"
 DITET = 7
 MAKS_URGJENTE, MAKS_RAPORTE, MAKS_BURIME = 10, 15, 10
 RENDI = {"URGJENTE": 0, "RAPORT": 1, "MONITORIM": 2, "ARKIV": 3}
-B_VEPRIM = 0.80  # si te rreziku.py: nën këtë, URGJENTE do të thotë "për verifikim, jo për veprim"
+B_VEPRIM = motor_rreziku.B_LARTE
 
 
 # ---------------- Ndihmës (i përdor edhe dashboard.py) ----------------
@@ -81,8 +82,15 @@ def ngjarjet(vendimet=None):
 
 
 def prioriteti(e):
+    # Vendimi i saporuajtur vlen edhe kur detajet e rrezikut janë llogaritur më herët.
+    statusi = e.get("statusi")
+    _, niveli, _ = rreziku(e)
+    brezi = motor_rreziku.brezi_besueshmerise(besueshmeria(e), statusi)
+    aktual = motor_rreziku.prioriteti_sipas(niveli, brezi, statusi)
+    if aktual is not None:
+        return aktual
     p = e["det"].get("prioriteti")
-    return p if p in RENDI else None
+    return p if isinstance(p, str) and p in RENDI else None
 
 
 def rreziku(e):
@@ -97,18 +105,23 @@ def rreziku(e):
 
 def admiralty(e):
     a = e["det"].get("admiralty")
-    return a.get("kodi") if isinstance(a, dict) and isinstance(a.get("kodi"), str) else None
+    kodi = a.get("kodi") if isinstance(a, dict) else None
+    if not isinstance(kodi, str) or not re.fullmatch(r"[A-F][1-6]", kodi):
+        return None
+    statusi = e.get("statusi")
+    if statusi in ("e konfirmuar", "e hedhur poshtë") or (statusi == "e pakonfirmuar" and kodi[1] in "15"):
+        return kodi[0] + str(motor_rreziku.informacioni_admiralty(e["det"], statusi))
+    return kodi
 
 
 def besueshmeria(e):
-    b = e.get("besueshmeria")
-    return b if isinstance(b, (int, float)) else None
+    return motor_rreziku.besueshmeria_valide(e.get("besueshmeria"))
 
 
 def per_verifikim(e):
     """URGJENTE me besueshmëri të ulët dhe pa konfirmim: për verifikim, jo për veprim."""
     b = besueshmeria(e)
-    return e["statusi"] != "e konfirmuar" and (b is None or b < B_VEPRIM)
+    return e.get("statusi") not in ("e konfirmuar", "e hedhur poshtë") and (b is None or b < B_VEPRIM)
 
 
 def kategoria(e):
@@ -119,7 +132,8 @@ def kategoria(e):
 def renditja(e):
     """Për renditje: prioriteti, pastaj rreziku më i lartë, pastaj më e reja."""
     p, _, _ = rreziku(e)
-    return RENDI.get(prioriteti(e), 4), -(p if p is not None else -1), str(e.get("data") or "")[::-1]
+    d = patterns.dita(e.get("data"))
+    return RENDI.get(prioriteti(e), 4), -(p if p is not None else -1), -d.toordinal() if d else 0
 
 
 def brenda(e, nga, deri):
@@ -220,7 +234,7 @@ def permbajtja(te_gjitha, deri, fillimi_mbledhjes=None):
         md.append(f"- {pastro(k, 60)}: {n} ngjarje (7 ditët para: {me_pare.get(k, 0)})")
     if not tani:
         md.append("- S'ka ngjarje në këtë periudhë.")
-    alarmet = patterns.rritjet(aktive, sot=deri.isoformat(), fillimi_mbledhjes=fillimi_mbledhjes)
+    alarmet = patterns.rritjet(te_gjitha, sot=deri.isoformat(), fillimi_mbledhjes=fillimi_mbledhjes)
     md += [f"- ⚠️ {patterns.pershkrim(a)}" for a in alarmet]
     if fillimi_mbledhjes and not patterns.histori_e_mjaftueshme(fillimi_mbledhjes, deri.isoformat()):
         md.append("- Alarmet për rritje aktivizohen pas 5 javë mbledhjeje.")
@@ -277,7 +291,7 @@ if __name__ == "__main__":
             return db.ruaj_ngjarje(
                 titulli=titulli, data=data, gjuha="sq", burimet=[url, "javascript:alert(1)"],
                 boshllequet=["vetëm një burim"], vendi="Zvečan", besueshmeria=b,
-                detajet={"prioriteti": p, "rreziku": {"pike": pike, "niveli": "i lartë",
+                detajet={"prioriteti": p, "rreziku": {"pike": pike, "niveli": "i lartë" if pike >= 55 else "i mesëm",
                                                       "arsyet": ["aktori: shteti_serb → +10"]},
                          "admiralty": {"kodi": "B2"}, "kategoria": "ushtarak_serbia",
                          "mediat": ["Koha"], **det})
@@ -300,7 +314,18 @@ if __name__ == "__main__":
         assert siguro('<b>"x"</b> \\u{41} `${1}`') == \
             "&lt;b&gt;&quot;x&quot;&lt;/b&gt; &#92;u{41} &#96;&#36;{1}&#96;"
         assert not any(c in siguro("\\`$<>\"'") for c in "\\`$<>\"'") and siguro(None) == ""
-        assert "Për verifikim, jo për veprim" in r and "e konfirmoi Policia" in r and "Admiralty B2" in r
+        assert "Për verifikim, jo për veprim" in r and "e konfirmoi Policia" in r and "Admiralty B1" in r
+        e_vjeter = {"data": "2026-11-17", "det": {"prioriteti": "URGJENTE"}}
+        e_re = dict(e_vjeter, data="2026-11-18")
+        assert sorted([e_vjeter, e_re], key=renditja) == [e_re, e_vjeter]
+        e_refuzuar = dict(e_re, statusi="e hedhur poshtë", besueshmeria=0.3)
+        assert prioriteti(e_refuzuar) == "ARKIV" and not per_verifikim(e_refuzuar)
+        e_korrigjuar = dict(e_refuzuar, det={"admiralty": {"kodi": "B5"}, "mediat": ["Koha"]},
+                            statusi="e pakonfirmuar")
+        assert admiralty(e_korrigjuar) == "B6"
+        histori = [{"data": "2026-11-01", "vendi": "Gjilan", "statusi": "e konfirmuar", "det": {}}] * 20
+        tani = [dict(histori[0], data="2026-11-18")] * 3
+        assert "Rritje e pazakontë" not in permbajtja(histori + tani, date(2026, 11, 18), "2026-10-01")
         shtegu = gjenero("2026-11-18", tmp)
         assert shtegu.name == "raporti_2026-11-18.md"
         assert shtegu.read_text(encoding="utf-8").startswith("# Raporti ditor OSINT: 18.11.2026")

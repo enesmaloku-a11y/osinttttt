@@ -20,33 +20,38 @@ KONTROLLET = [
     ("extractor.py", ["extractor.py", "0"]),
     ("correlator.py", ["correlator.py"]),
     ("scoring.py", ["scoring.py"]),
+    ("trajno.py", ["trajno.py", "--kontrollo"]),
     ("patterns.py", ["patterns.py"]),
     ("vektori.py", ["vektori.py"]),
     ("kontekst_dezinformim.py", ["kontekst_dezinformim.py"]),
     ("kontekst_kibernetik.py", ["-c", "import kontekst_kibernetik as k; k.kontrollet()"]),
     ("eval/evaluate.py", ["-c", "import sys; sys.path.insert(0, 'eval'); import evaluate as e; "
-                    "getattr(e, 'kontrollo', lambda: None)(); e.lexo_gold()"]),
+                    "e.kontrollo(); e.lexo_gold()"]),
     ("kercenimet.py", ["kercenimet.py"]),
     ("rreziku.py", ["rreziku.py"]),
     ("apify_burimi.py", ["apify_burimi.py"]),
     ("raporti.py", ["raporti.py", "2026-11-18"]),
     # Me OSINT_NGRIRE=1 main() del para çdo hapi (as Ollama, as rrjet)
     ("main.py (ngrirja)", ["-c", "import os; os.environ['OSINT_NGRIRE'] = '1'; import main, processor; "
-                          "processor.ollama_gati = lambda: (_ for _ in ()).throw(AssertionError('s u ngri')); "
+                          "processor.gabimi_ollama = lambda: (_ for _ in ()).throw(AssertionError('s u ngri')); "
                           "main.main(1)"]),
+    ("ekzekuto.py", ["ekzekuto.py", "--kontrollo"]),
     ("demo.py", ["demo.py", "--kontrollo"]),
+    ("demo_live.py", ["demo_live.py"]),
     ("dashboard.py", ["-c", "from streamlit.testing.v1 import AppTest; "
                          "at = AppTest.from_file('dashboard.py', default_timeout=90).run(); "
                          "assert not at.exception, [x.value for x in at.exception]"]),
-    # Si në Streamlit Cloud: pa OSINT_DB krijon vetë demo.db, dhe s'lejon nisjen e pipeline-it
-    ("dashboard.py (cloud)", ["-c", "import os, sqlite3; os.environ.pop('OSINT_DB'); os.environ['OSINT_CLOUD'] = '1'; "
+    # Cloud pa OSINT_DB merr një demo të përkohshme vetëm për lexim.
+    ("dashboard.py (cloud)", ["-c", "import os, db; from pathlib import Path; "
+                                   "os.environ.pop('OSINT_DB'); os.environ['OSINT_CLOUD'] = '1'; "
                                    "from streamlit.testing.v1 import AppTest; "
                                    "at = AppTest.from_file('dashboard.py', default_timeout=120).run(); "
                                    "assert not at.exception, [x.value for x in at.exception]; "
                                    "b = [x for x in at.button if any(f in x.label for f in ('Ekzekuto', 'Mblidh lajmet', 'orarin'))]; "
                                    "assert len(b) == 3 and all(x.disabled for x in b), [(x.label, x.disabled) for x in b]; "
-                                   "n = sqlite3.connect('demo.db').execute('SELECT COUNT(*) FROM articles').fetchone()[0]; "
-                                   "assert n > 0 and len(at.expander) > 0, (n, len(at.expander))"]),
+                                   "assert Path(db.DB_PATH).parent.name.startswith('osint-demo-'); "
+                                   "assert not Path('demo.db').exists() and len(db.ngjarjet()) == 28; "
+                                   "assert not any(x.label == 'Ruaj vendimin' for x in at.button)"]),
 ]
 
 
@@ -57,15 +62,20 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         kopja = Path(tmp) / "projekti"
         shutil.copytree(DOSJA, kopja, ignore=shutil.ignore_patterns(
-            "venv", ".git", "*.db", "data", "__pycache__", "pipeline.*", "orari.json"))
+            "venv", ".venv", ".git", "*.db", "data", "__pycache__", "pipeline.*", "orari.json"))
         env = {**os.environ, "OSINT_DB": str(Path(tmp) / "kontroll.db"), "PYTHONWARNINGS": "ignore",
                "PYTHONIOENCODING": "utf-8"}  # fëmijët shkruajnë UTF-8, pavarësisht terminalit
         for emri, komanda in KONTROLLET:
             if not (kopja / emri.split()[0]).exists():
                 print(f"  -   {emri} (s'ekziston në këtë degë)")
                 continue
-            r = subprocess.run([sys.executable, *komanda], cwd=kopja, env=env,
-                               capture_output=True, encoding="utf-8", errors="replace", timeout=300)
+            try:
+                r = subprocess.run([sys.executable, *komanda], cwd=kopja, env=env,
+                                   capture_output=True, encoding="utf-8", errors="replace", timeout=300)
+            except subprocess.TimeoutExpired:
+                deshtuan.append(emri)
+                print(f"  GABIM {emri} (kaloi kufirin prej 300 sekondash)")
+                continue
             ok = r.returncode == 0
             print(f"  {'OK ' if ok else 'GABIM'} {emri}")
             if not ok:

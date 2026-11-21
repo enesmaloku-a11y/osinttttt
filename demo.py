@@ -74,12 +74,12 @@ def mbush(gold):
         k = g["pritet"]["grupi"] or g["id"]
         url = f"gold://{g['id']}"
         db.ruaj_artikull(url=url, burimi=g["burimi"], titulli=g["titulli"], data=g["data"],
-                         gjuha=g["gjuha"], teksti=g["teksti"])
+                         gjuha=g["gjuha"], teksti=g["teksti"], published_at=g["data"])
         with closing(db.lidhu()) as con:
             aid = con.execute("SELECT id FROM articles WHERE url = ?", (url,)).fetchone()[0]
         db.sheno_perpunuar(aid, rezultati(g, perm[k], vendi[k]))
     n = correlator.korrelo()
-    scoring.vlereso_te_gjitha()
+    scoring.vlereso_te_gjitha(perdor_modelin=False)
     shenjo_aktoret_e_nxjerre(gold)
     # "Sot" = dita e fundit e gold set-it, që pikët e freskisë (dhe Urgjente) të mos ndryshojnë me kalendarin
     rreziku.vlereso_te_gjitha(sot=max(g["data"] for g in gold))
@@ -90,7 +90,7 @@ def gjenero(destinacioni):
     """Ndërton demon në një skedar të përkohshëm dhe e publikon te destinacioni pa mbishkruar asgjë.
     Kthen (artikuj, ngjarje, urgjente); ngre FileExistsError nëse destinacioni ekziston."""
     destinacioni = Path(destinacioni).resolve()
-    if destinacioni.name == "osint.db":
+    if destinacioni.name.casefold() == "osint.db":
         raise ValueError("demo.py s'e prek osint.db (të dhënat reale)")
     if destinacioni.exists():
         raise FileExistsError(destinacioni)

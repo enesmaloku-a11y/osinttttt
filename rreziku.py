@@ -72,6 +72,25 @@ def baza(kat):
     return rb if type(rb) is int and 1 <= rb <= 5 else 1
 
 
+def besueshmeria_valide(b):
+    """Baza e vjetër mund të mos ketë ende një besueshmëri të vlefshme."""
+    return b if type(b) in (int, float) and 0 <= b <= 1 else None
+
+
+def brezi_besueshmerise(b, statusi):
+    if statusi == "e konfirmuar" or (b is not None and b >= B_LARTE):
+        return 0
+    return 1 if b is not None and b >= B_ULET else 2
+
+
+def prioriteti_sipas(niveli, brezi, statusi):
+    if statusi == "e hedhur poshtë":
+        return "ARKIV"
+    if isinstance(niveli, str) and niveli in MATRICA:
+        return MATRICA[niveli][brezi]
+    return None
+
+
 def statusi_i(e, vendimet):
     """Vendimi i analistit te cilado URL e ngjarjes (db.url_i_vendimit), që të mos humbasë kur
     korrelimi sjell një artikull më të hershëm në vend të burimet[0]."""
@@ -94,26 +113,30 @@ def shkronja(m, dez):
     return "D" if raste and s == "F" else s
 
 
-def admiralty(det, statusi, dez):
+def informacioni_admiralty(det, statusi):
+    if statusi == "e hedhur poshtë":
+        return 5
+    if statusi == "e konfirmuar":
+        return 1
     mediat = [m for m in det.get("mediat") or [] if isinstance(m, str)]
-    # Pas scoring.py: vetëm origjinat janë burime; një kopje s'konfirmon dhe s'e ngre shkronjën e burimit
-    origjinat = [m for m in det.get("mediat_e_pavarura") or [] if isinstance(m, str)] or mediat
-    burimi = min((shkronja(m, dez) for m in origjinat), key=RENDI_BURIMIT.index, default="F")
     soc = sum(m.startswith(SOCIALE) for m in mediat)
     n = det.get("burime_te_pavarura")
     if type(n) is not int or n < 0:  # det i vjetër, para se scoring.py t'i grupojë ripostimet
         n = len(mediat) - soc + min(1, soc)  # kanalet sociale (shpesh ripostime) = një burim
     k = len(scoring.pike_detajesh(det, n)[1])
     rast = any(isinstance(c, dict) and c.get("lloji") == "rast_i_ngjashem" for c in det.get("konteksti") or [])
-    if statusi == "e hedhur poshtë":
-        info = 5
-    elif statusi == "e konfirmuar":
-        info = 1
-    elif n >= 2:
+    if n >= 2:
         gjuhet = det.get("gjuhet_e_pavarura", det.get("gjuhet")) or []
-        info = (1 if len(gjuhet) >= 2 or n >= 3 else 2) if k == 0 else 3 if k == 1 else 4
-    else:
-        info = 3 if n == 1 and rast else 6
+        return (1 if len(gjuhet) >= 2 or n >= 3 else 2) if k == 0 else 3 if k == 1 else 4
+    return 3 if n == 1 and rast else 6
+
+
+def admiralty(det, statusi, dez):
+    mediat = [m for m in det.get("mediat") or [] if isinstance(m, str)]
+    # Pas scoring.py: vetëm origjinat janë burime; një kopje s'konfirmon dhe s'e ngre shkronjën e burimit.
+    origjinat = [m for m in det.get("mediat_e_pavarura") or [] if isinstance(m, str)] or mediat
+    burimi = min((shkronja(m, dez) for m in origjinat), key=RENDI_BURIMIT.index, default="F")
+    info = informacioni_admiralty(det, statusi)
     return {"burimi": burimi, "informacioni": info, "kodi": f"{burimi}{info}"}
 
 
@@ -137,7 +160,7 @@ def ndikimi_21(e, det, pike, b, statusi):
     else:
         ndikimi, pse = "i ulët", f"rreziku {pike}, pa viktima"
     # Ndikim potencialisht i rëndë me prova të kufizuara: verifikim urgjent
-    verifikim = (ndikimi in ("kritik", "i lartë") and statusi != "e konfirmuar"
+    verifikim = (ndikimi in ("kritik", "i lartë") and statusi not in ("e konfirmuar", "e hedhur poshtë")
                  and (b is None or b < B_LARTE))
     return {"kategorite": kat, "ndikimi": ndikimi, "pse": pse,
             "urgjenca": ("afatgjatë" if kercenimet.KATEGORITE_21[kat[0]]["afatgjate"] else "në zhvillim")
@@ -196,11 +219,9 @@ def vlereso(e, det, *, sot=None, te_tjerat=(), vendimet=None, dez=None):
     arsyet.append(f"rreziku {pike}/100 → {niveli}")
 
     statusi = statusi_i(e, vendimet)
-    b = e.get("besueshmeria")
-    b = b if type(b) in (int, float) else None
-    brezi = 0 if statusi == "e konfirmuar" or (b is not None and b >= B_LARTE) else \
-        1 if b is not None and b >= B_ULET else 2
-    prioriteti = "ARKIV" if statusi == "e hedhur poshtë" else MATRICA[niveli][brezi]
+    b = besueshmeria_valide(e.get("besueshmeria"))
+    brezi = brezi_besueshmerise(b, statusi)
+    prioriteti = prioriteti_sipas(niveli, brezi, statusi)
     if prioriteti == "URGJENTE":
         arsyet.append("URGJENTE për veprim" if brezi == 0 else
                       f"URGJENTE për verifikim, jo për veprim (besueshmëria "
@@ -310,6 +331,9 @@ if __name__ == "__main__":
     # Vendimi gjendet edhe kur një artikull më i hershëm u bë burimet[0]
     e = dict(ng("2026-11-20", "Zvečan", "Road blocked", 0.9), burimet=json.dumps(["i_ri", "u8"]))
     assert statusi_i(e, VEND) == "e hedhur poshtë" and vlereso(e, {}, vendimet=VEND)["prioriteti"] == "ARKIV"
+    kritike = vlereso(dict(e, besueshmeria=0.3), {"killed": [3]}, vendimet=VEND)
+    assert kritike["prioriteti"] == "ARKIV" and kritike["v21"]["verifikim_urgjent"] is False
+    assert besueshmeria_valide(float("nan")) is None and besueshmeria_valide(1.1) is None
     assert statusi_i(dict(e, burimet="[]"), VEND) is None and statusi_i(e, None) is None
     # Rajonalja me shenjestër në Kosovë ose me lidhje me FSK-në s'kufizohet
     parade_e, parade = RASTET[11][:2]

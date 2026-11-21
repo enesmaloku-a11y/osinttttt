@@ -191,7 +191,7 @@ def trajno():
     for emer, m in metrikat.items():
         print(f"{emer}: AUC {m['auc']:.3f}, Brier {m['brier']:.3f}, precision@80 {m['precision_080']}, "
               f"n_080 {m['n_080']}, Wilson 95% {m['precision_080_wilson_95']}, recall@80 {m['recall_080']:.3f}")
-    print(f"Pragu me precision ≥90% në vlerësim: {prag}. {raport['rekomandim']}")
+    print(f"Pragu me precision >=90% në vlerësim: {prag}. {raport['rekomandim']}")
     return 0
 
 

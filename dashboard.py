@@ -5,12 +5,15 @@ Skedat: Përmbledhja (rrezik x besueshmëri, Serbia, zonat), Urgjente dhe Raport
 të rreziku.py), Ngjarjet (harta, kronologjia), Kërcënimet (taksonomia), Burimet, Vlerësimi,
 Artikujt, Ekzekutimi.
 """
+import hashlib
 import html
 import json
 import os
 import sqlite3
+import tempfile
 from collections import Counter
-from datetime import datetime, timedelta
+from contextlib import closing
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -77,35 +80,33 @@ h3 { font-size: .8rem !important; letter-spacing: .14em; text-transform: upperca
 VENDI_KOKES = st.container()
 KOMANDA = st.expander("Komanda: mbledhja dhe filtrat", expanded=False)
 
-# Cloud (Streamlit Cloud është Linux, pa Ollama): vetëm demo me të dhëna sintetike, pa nisje të
-# pipeline-it. OSINT_CLOUD=1 e provon këtë mënyrë edhe në Windows.
+# Në cloud pipeline-i nuk niset nga ndërfaqja. Një OSINT_DB i konfiguruar lexohet siç
+# është; pa të, cloud-i përgatit një demo të izoluar për procesin.
 CLOUD = os.environ.get("OSINT_CLOUD", "1" if os.name != "nt" else "0") == "1"
+BAZA_E_KONFIGURUAR = os.environ.get("OSINT_DB")
+DEMO_CLOUD = CLOUD and not BAZA_E_KONFIGURUAR
 
 
 @st.cache_resource
 def pergatit_demon():
-    """Një herë për proces: pa OSINT_DB, cloud-i përdor demo.db dhe e krijon nga gold-i kur mungon."""
+    """Mban gjallë dosjen provuese për sa kohë Streamlit e përdor bazën."""
     import demo
-    db.DB_PATH = os.environ.get("OSINT_DB") or str(DOSJA / "demo.db")
-    if not Path(db.DB_PATH).exists():
-        try:
-            demo.gjenero(db.DB_PATH)
-        except FileExistsError:
-            pass  # një proces tjetër e krijoi ndërkohë
-    return db.DB_PATH
+    dosja = tempfile.TemporaryDirectory(prefix="osint-demo-")
+    demo.gjenero(Path(dosja.name) / "demo.db")
+    return dosja
 
 
-if CLOUD:
-    db.DB_PATH = pergatit_demon()
-    st.info("Demo me të dhëna **sintetike** (63 artikuj nga `eval/gold.jsonl`). Sistemi për FSK-në "
-            "punon lokalisht me Ollama; këtu pipeline-i s'niset.")
+if DEMO_CLOUD:
+    db.DB_PATH = str(Path(pergatit_demon().name) / "demo.db")
+    st.info("Demo me të dhëna **sintetike** nga `eval/gold.jsonl`. Vendimet në këtë pamje janë vetëm për lexim.")
+elif BAZA_E_KONFIGURUAR:
+    db.DB_PATH = BAZA_E_KONFIGURUAR
 
 
 @st.cache_data(ttl=60)
-def lexo(sql):
+def lexo(shtegu, sql):
     """Lexon një tabelë nga SQLite (cache 60 sekonda që faqja të jetë e shpejtë)."""
-    db.lidhu().close()  # krijon tabelat nëse baza është e re
-    with sqlite3.connect(db.DB_PATH) as con:
+    with closing(sqlite3.connect(shtegu)) as con:
         return pd.read_sql(sql, con)
 
 
@@ -123,9 +124,9 @@ def perqind(v):
     return f"{v:.0%}" if isinstance(v, (int, float)) else "–"
 
 
-artikujt = lexo("SELECT id, url, burimi, titulli, data, gjuha, teksti, teksti_perkthyer, "
-                "perpunuar, hash_sha256, mbledhur_me FROM articles")
 db.lidhu().close()
+artikujt = lexo(db.DB_PATH, "SELECT id, url, burimi, titulli, data, published_at, gjuha, teksti, "
+                "teksti_perkthyer, raw_text, lloji_tekstit, hash_sha256, mbledhur_me FROM articles")
 # Vendimet lexohen pa cache, që një vendim i ruajtur të shfaqet menjëherë
 te_gjitha = raporti.ngjarjet()
 
@@ -158,33 +159,45 @@ PAMJET = {"Kosova": ([[41.85, 20.00], [43.27, 21.80]], 8), "Rajoni": ([[40.80, 1
 # sa pasiguria (metra). "village" (fshat ose vend i saktë) vizatohet si pikë.
 RREZET = {"region": 15000, "municipality": 5000}
 
-# Ora e publikimit për çdo URL, me orën e Kosovës. Ngjarjet kanë vetëm datë, ndaj ora vjen nga artikulli.
-# Artikujt që kanë vetëm datë (pa orë) s'futen, që të mos dalë një orë e shpikur (00:00).
-ORA_E_URL = {}
-for _u, _d in zip(artikujt["url"], artikujt["data"]):
-    _t = pd.to_datetime(_d, utc=True, errors="coerce") if isinstance(_d, str) and len(_d) > 10 else pd.NaT
-    if pd.notna(_t):
-        ORA_E_URL[_u] = _t.tz_convert("Europe/Belgrade")
+def shfaq_publikimin(vlera):
+    """Ruan ditën kur nuk dihet ora; orën e verifikuar e shfaq në zonën e Kosovës."""
+    if not isinstance(vlera, str):
+        return None
+    koha = pd.to_datetime(vlera, utc=True, errors="coerce")
+    if pd.isna(koha):
+        return None
+    if len(vlera) == 10:
+        return koha.strftime("%Y-%m-%d")
+    return koha.tz_convert("Europe/Belgrade").strftime("%Y-%m-%d %H:%M")
 
 
-def koha_e(e):
-    """Data dhe ora e lajmit: publikimi më i hershëm i burimeve. Pa orë të njohur, vetëm data e ngjarjes."""
-    orat = [ORA_E_URL[u] for u in e["burimet_l"] if u in ORA_E_URL]
-    return min(orat).strftime("%Y-%m-%d %H:%M") if orat else str(e.get("data") or "–")[:10]
+artikujt["publikimi"] = artikujt["published_at"].map(shfaq_publikimin)
+PUBLIKIMI_E_URL = {u: p for u, p in zip(artikujt["url"], artikujt["publikimi"]) if isinstance(p, str)}
 
 
-artikujt["data"] = pd.to_datetime(artikujt["data"], utc=True, errors="coerce")
+def publikimi_i_pare(e):
+    """Publikimi më i hershëm i njohur nga burimet; data e ngjarjes paraqitet veç."""
+    return min((PUBLIKIMI_E_URL[u] for u in e["burimet_l"] if u in PUBLIKIMI_E_URL), default="–")
+
+
+def dita_e_ngjarjes(e):
+    return str(e.get("data") or "–")[:10]
+
+
+artikujt["data"] = pd.to_datetime(artikujt["data"], format="mixed", utc=True, errors="coerce")
 # Të gjitha domenet e GDELT bashkohen në një grup që grafiku të mbetet i lexueshëm
 artikujt["grupi"] = artikujt["burimi"].where(~artikujt["burimi"].str.startswith("GDELT:"), "GDELT")
 
 # ---------------- Komanda: mbledhja dhe filtrat (lart, në vend të sidebar-it) ----------------
-ngrire = raporti.ngrire() or CLOUD  # gjatë etiketimit ose në cloud asgjë s'nis pipeline-in
+ngrire = raporti.ngrire() or CLOUD  # gjatë etiketimit ose në cloud ndërfaqja s'nis pipeline-in
 k_mbl, k_ngj, k_art = KOMANDA.columns([1, 2, 2])
 with k_mbl:
     seksion_kmd = '<div class="seksion">{}</div>'
     st.markdown(seksion_kmd.format("Mbledhja"), unsafe_allow_html=True)
-    if CLOUD:
+    if DEMO_CLOUD:
         st.info("Demo në cloud: mbledhja punon vetëm në laptopin me Ollama.")
+    elif CLOUD:
+        st.info("Në këtë instalim, mbledhja menaxhohet nga serveri.")
     elif ngrire:
         st.warning("Etiketim në vazhdim: mbledhja është e ngrirë.")
     if st.button("Mblidh lajmet tani", type="primary", key="ekz_sidebar", width="stretch",
@@ -238,8 +251,8 @@ if burimet:
 if gjuhet:
     f = f[f["gjuha"].isin(gjuhet)]
 if kerko:
-    ka = f["titulli"].str.contains(kerko, case=False, na=False) | \
-         f["teksti"].str.contains(kerko, case=False, na=False)
+    ka = (f["titulli"].str.contains(kerko, case=False, na=False, regex=False)
+          | f["teksti"].str.contains(kerko, case=False, na=False, regex=False))
     f = f[ka]
 
 
@@ -264,7 +277,7 @@ def kartela(e, skeda):
     n_pav = det.get("burime_te_pavarura")
     n_pav = n_pav if type(n_pav) is int and n_pav >= 0 else len(det.get("mediat") or [])
     burime = " · :orange[1 burim i vetëm]" if n_pav == 1 else f" · {n_pav} origjina" if n_pav > 1 else ""
-    koka = (f"{ETIKETA.get(p, ETIKETA[None])} {koha_e(e)} · {raporti.pastro(e['titulli'], 120)}"
+    koka = (f"{ETIKETA.get(p, ETIKETA[None])} {dita_e_ngjarjes(e)} · {raporti.pastro(e['titulli'], 120)}"
             f" · rreziku {pike if pike is not None else '–'} · besueshmëria {perqind(b)}"
             + (f" · {kodi}" if kodi else "") + f"{burime}{VENDIMI[e['statusi']]}")
     with st.expander(koka):
@@ -293,7 +306,7 @@ def kartela(e, skeda):
                      + f"  ·  **Ndikimi:** {ndikimi}  ·  **Urgjenca:** {raporti.pastro(v21.get('urgjenca'), 20) or '–'}")
             st.caption(f"Ndikimi {ndikimi}: {kercenimet.NDIKIMET.get(v21.get('ndikimi'), '')} "
                        f"({raporti.pastro(v21.get('pse'), 120)}). Nivele paraprake, për validim nga përgjegjësi.")
-            if v21.get("verifikim_urgjent") is True:
+            if v21.get("verifikim_urgjent") is True and e["statusi"] == "e pakonfirmuar":
                 st.error("Verifikim urgjent: ndikim potencialisht i rëndë me prova të kufizuara.")
         shenj = ", ".join(kercenimet.SHENJESTRAT.get(s, s) for s in det.get("shenjestrat") or []) or "–"
         aktori = det.get("aktori")
@@ -310,7 +323,8 @@ def kartela(e, skeda):
                 ("Shenjestrat", shenj),
                 ("Vendi", f"{raporti.pastro(e.get('vendi'), 60) or '–'} "
                           f"({SAKTESIA.get(det.get('saktesia_vendit'), 'e panjohur')})"),
-                ("Data dhe ora", f"{koha_e(e)} (data {SAKTESIA.get(det.get('saktesia_dates'), 'e panjohur')})"),
+                ("Data e ngjarjes", f"{dita_e_ngjarjes(e)} ({SAKTESIA.get(det.get('saktesia_dates'), 'e panjohur')})"),
+                ("Publikimi i parë i njohur", publikimi_i_pare(e)),
                 ("Zona · lidhje me FSK", f"{'rajonale' if det.get('rajonale') else 'Kosovë'} · "
                                          f"{'po' if det.get('lidhje_me_fsk') else 'jo'}"),
                 ("Lloji · gjuha", f"{raporti.pastro(e.get('lloji'), 40) or '–'} · {raporti.pastro(e.get('gjuha'), 5)}"),
@@ -349,13 +363,19 @@ def kartela(e, skeda):
         # Vendimi i analistit: sistemi vetëm sugjeron, njeriu vendos
         seksion("Vendimi i analistit")
         k = e["url_kryesor"]
-        statusi = st.segmented_control("Statusi", db.STATUSET, default=e["statusi"], key=f"st_{skeda}_{k}",
+        if DEMO_CLOUD or not k:
+            st.caption(e["shenimi"] or ("Demo për lexim." if DEMO_CLOUD else "Ngjarja nuk ka URL burimi për vendimin."))
+            return
+        # Një vendim i ruajtur rifreskon formularët e së njëjtës ngjarje në të gjitha skedat.
+        gjurma = hashlib.sha256(f"{e['statusi']}\0{e['shenimi']}".encode()).hexdigest()[:16]
+        celesi = f"{skeda}_{e['id']}_{k}_{gjurma}"
+        statusi = st.segmented_control("Statusi", db.STATUSET, default=e["statusi"], key=f"st_{celesi}",
                                        label_visibility="collapsed") or e["statusi"]
-        shenimi = st.text_input("Shënim", e["shenimi"], key=f"sh_{skeda}_{k}",
+        shenimi = st.text_input("Shënim", e["shenimi"], key=f"sh_{celesi}",
                                 placeholder="p.sh. e konfirmoi Policia në Facebook")
-        if st.button("Ruaj vendimin", key=f"rv_{skeda}_{k}", type="primary"):
+        if st.button("Ruaj vendimin", key=f"rv_{celesi}", type="primary"):
             db.ruaj_vendimin(k, statusi, shenimi)
-            st.cache_data.clear()
+            st.session_state.pop(f"raporti_{db.DB_PATH}", None)
             st.rerun()
 
 
@@ -373,10 +393,13 @@ def ngjarjet_e_fundit(ngjarjet, sa=10):
     rreshtat = []
     for e in sorted(ngjarjet, key=lambda e: str(data_e(e) or ""), reverse=True)[:sa]:
         p, b = raporti.prioriteti(e), e["burimet_l"]
-        burimi = (burimi_i_url.get(b[0]) or urlparse(str(b[0])).hostname or "–") if b else "–"
+        burimi = burimi_i_url.get(b[0]) if b else None
+        if not burimi and b and (u := raporti.url_e_sigurt(b[0])):
+            burimi = urlparse(u).hostname
         rreshtat.append({"Prioriteti": p or "i pallogaritur",
-                         "Data dhe ora": koha_e(e), "Ngjarja": raporti.rresht(e["titulli"], 110),
-                         "Burimi": burimi + (f" (+{len(b) - 1})" if len(b) > 1 else "")})
+                         "Data e ngjarjes": dita_e_ngjarjes(e), "Publikimi": publikimi_i_pare(e),
+                         "Ngjarja": raporti.rresht(e["titulli"], 110),
+                         "Burimi": (burimi or "–") + (f" (+{len(b) - 1})" if len(b) > 1 else "")})
     return pd.DataFrame(rreshtat)
 
 
@@ -388,7 +411,8 @@ def grafiku_matrices(ngjarjet):
         if pike is None or b is None or p is None:
             pa_vlera += 1
             continue
-        pikat.append({"titulli": raporti.rresht(e["titulli"], 120), "data": koha_e(e),
+        pikat.append({"titulli": raporti.rresht(e["titulli"], 120), "data": dita_e_ngjarjes(e),
+                      "publikimi": publikimi_i_pare(e),
                       "prioriteti": p, "rreziku": pike,
                       "besueshmeria": b, "kategoria": raporti.rresht(raporti.kategoria(e), 80),
                       "burime": len(e["burimet_l"])})
@@ -414,7 +438,8 @@ def grafiku_matrices(ngjarjet):
         x=x, y=y, color=alt.Color("prioriteti:N", title="Prioriteti", scale=NGJYRAT_MATRICES),
         size=alt.Size("burime:Q", title="Burime", scale=alt.Scale(range=[60, 400], zero=False),
                       legend=alt.Legend(format="d", tickMinStep=1)),
-        tooltip=[alt.Tooltip("titulli:N", title="Ngjarja"), alt.Tooltip("data:N", title="Data dhe ora"),
+        tooltip=[alt.Tooltip("titulli:N", title="Ngjarja"), alt.Tooltip("data:N", title="Data e ngjarjes"),
+                 alt.Tooltip("publikimi:N", title="Publikimi i parë i njohur"),
                  alt.Tooltip("prioriteti:N", title="Prioriteti"), alt.Tooltip("rreziku:Q", title="Rreziku"),
                  alt.Tooltip("besueshmeria:Q", title="Besueshmëria", format=".0%"),
                  alt.Tooltip("kategoria:N", title="Kategoria")])
@@ -488,11 +513,12 @@ def harta_e(ngjarjet):
         p, det = raporti.prioriteti(e), e["det"]
         pike = raporti.rreziku(e)[0]
         sv = det.get("saktesia_vendit")
-        popup = (f"{siguro(raporti.rresht(e['titulli']))}<br>Data dhe ora: {siguro(koha_e(e))}<br>Prioriteti: {siguro(p or '–')} · "
+        popup = (f"{siguro(raporti.rresht(e['titulli']))}<br>Data e ngjarjes: {siguro(dita_e_ngjarjes(e))}<br>"
+                 f"Publikimi: {siguro(publikimi_i_pare(e))}<br>Prioriteti: {siguro(p or '–')} · "
                  f"Rreziku: {siguro(pike if pike is not None else '–')}<br>Besueshmëria: "
                  f"{siguro(perqind(raporti.besueshmeria(e)))} · Vendi: {siguro(SAKTESIA.get(sv, 'e panjohur'))}"
                  f"<br>Vendimi: {siguro(e['statusi'])}")
-        tooltip = siguro(f"{koha_e(e)} · {raporti.rresht(e['titulli'], 100)}")
+        tooltip = siguro(f"{dita_e_ngjarjes(e)} · {raporti.rresht(e['titulli'], 100)}")
         ngjyra = NGJYRA_HEX.get(p, NGJYRAT[4])
         # Pa saktësi të dhënë, koordinatat vijnë nga lista e komunave: trajtohen si komunë
         rreze = RREZET.get(sv or "municipality")
@@ -510,14 +536,18 @@ def harta_e(ngjarjet):
 
 # ---------------- Përmbledhja ----------------
 # Çdo e dhënë nga baza kalon nga html.escape para se të hyjë në HTML
-perditesuar = html.escape(str(artikujt["mbledhur_me"].max() or "–")[:16])
+mbledhja_e_fundit = pd.to_datetime(artikujt["mbledhur_me"], format="mixed", utc=True, errors="coerce").max()
+perditesuar = mbledhja_e_fundit.strftime("%Y-%m-%d %H:%M UTC") if pd.notna(mbledhja_e_fundit) else "–"
 punon = ekzekuto.po_punon()
-gjendja = ("MBLEDHJA PO PUNON", NGJYRAT[1]) if punon else ("E NGRIRË", NGJYRAT[3]) if ngrire else ("GATI", "#3ecf8e")
+gjendja = (("DEMO", NGJYRAT[3]) if DEMO_CLOUD
+           else ("MBLEDHJA PO PUNON", NGJYRAT[1]) if punon
+           else ("E NGRIRË", NGJYRAT[3]) if raporti.ngrire()
+           else ("GATI", "#3ecf8e"))
 VENDI_KOKES.markdown(f"""<div class="klasifikimi">E PAKLASIFIKUAR · VETËM BURIME TË HAPURA (OSINT)</div>
 <div class="shiriti"><div><div class="emri">OSINT <span>KOSOVA</span></div>
 <div class="nen">Qendra e situatës · kërcënimet hibride ndaj FSK-së dhe sigurisë së Kosovës</div></div>
 <div class="gjendja"><span class="pika" style="--c:{gjendja[1]}"></span>{gjendja[0]}<br>
-Mbledhja e fundit: {perditesuar} UTC<br>Sistemi sugjeron · analisti vendos</div></div>""", unsafe_allow_html=True)
+Mbledhja e fundit: {perditesuar}<br>Sistemi sugjeron · analisti vendos</div></div>""", unsafe_allow_html=True)
 
 per_verif = sum(map(raporti.per_verifikim, urgjente))
 pllakat = [("Urgjente", len(urgjente), NGJYRAT[0]), ("Për verifikim", per_verif, NGJYRAT[1]),
@@ -606,12 +636,17 @@ with tab_urg:
         st.success("S'ka ngjarje urgjente me këto filtra.")
 
     st.subheader("Raporti ditor")
+    raporti_kyc = f"raporti_{db.DB_PATH}"
     if st.button("Gjenero raportin ditor", icon=":material/description:"):
-        st.session_state["raporti"] = str(raporti.gjenero())
-    if st.session_state.get("raporti") and Path(st.session_state["raporti"]).exists():
-        shtegu = Path(st.session_state["raporti"])
-        teksti = shtegu.read_text(encoding="utf-8")
-        st.download_button("Shkarko raportin", teksti, icon=":material/download:", file_name=shtegu.name, mime="text/markdown")
+        deri = date.today()
+        if len(artikujt) and artikujt["url"].str.startswith("gold://").all():
+            deri = max(filter(None, map(data_e, te_gjitha)), default=deri)
+        st.session_state[raporti_kyc] = (
+            f"raporti_{deri.isoformat()}.md", raporti.permbajtja(te_gjitha, deri, db.fillimi_i_mbledhjes())
+        )
+    if raporti_kyc in st.session_state:
+        emri, teksti = st.session_state[raporti_kyc]
+        st.download_button("Shkarko raportin", teksti, icon=":material/download:", file_name=emri, mime="text/markdown")
         with st.expander("Shiko raportin", expanded=True):
             st.markdown(teksti)
 
@@ -649,7 +684,7 @@ with tab_ngj:
                "internet (pa të nuk shfaqet; kronologjia dhe lista punojnë).")
     # Qendra dhe zoom-i i jepen st_folium-it: kalimi mes pamjeve s'e ringarkon hartën
     (jug, per), (veri, lin) = PAMJET[pamja][0]
-    st_folium(harta, height=450, use_container_width=True, returned_objects=[], key="harta_ngj",
+    st_folium(harta, height=450, width="stretch", returned_objects=[], key="harta_ngj",
               center=[(jug + veri) / 2, (per + lin) / 2], zoom=PAMJET[pamja][1])
 
     if not ngj:
@@ -658,7 +693,7 @@ with tab_ngj:
         # Kronologjia: një pikë për çdo ngjarje, sipas datës dhe kategorisë
         st.subheader("Kronologjia")
         k = pd.DataFrame([{
-            "dita": str(e["data"])[:10], "ora": koha_e(e), "kategoria": raporti.rresht(raporti.kategoria(e), 80),
+            "dita": dita_e_ngjarjes(e), "publikimi": publikimi_i_pare(e), "kategoria": raporti.rresht(raporti.kategoria(e), 80),
             "prioriteti": raporti.prioriteti(e) or "i pallogaritur",
             "titulli": raporti.rresht(e["titulli"], 120), "burime": len(e["burimet_l"]),
             "besueshmeria": perqind(raporti.besueshmeria(e)),
@@ -674,7 +709,8 @@ with tab_ngj:
             size=alt.Size("burime:Q", title="Burime", scale=alt.Scale(range=[80, 500], zero=False),
                           legend=alt.Legend(format="d", tickMinStep=1)),
             color=alt.Color("prioriteti:N", title="Prioriteti", scale=NGJYRAT_PRIORITETIT),
-            tooltip=[alt.Tooltip("ora:N", title="Data dhe ora"), alt.Tooltip("titulli:N", title="Ngjarja"),
+            tooltip=[alt.Tooltip("dita:T", title="Data e ngjarjes"),
+                     alt.Tooltip("publikimi:N", title="Publikimi i parë i njohur"), alt.Tooltip("titulli:N", title="Ngjarja"),
                      alt.Tooltip("prioriteti:N", title="Prioriteti"), alt.Tooltip("rreziku:Q", title="Rreziku"),
                      alt.Tooltip("besueshmeria:N", title="Besueshmëria"), alt.Tooltip("burime:Q", title="Burime")],
         )
@@ -794,51 +830,62 @@ with tab_vle:
 with tab_art:
     m, d = st.columns(2)
     m.subheader("Sipas burimit")
-    m.bar_chart(f["grupi"].value_counts())
-    d.subheader("Sipas ditës")
-    d.bar_chart(f.dropna(subset=["data"]).groupby(f["data"].dt.date).size())
+    if f.empty:
+        m.caption("S'ka artikuj me këta filtra.")
+    else:
+        m.bar_chart(f["grupi"].value_counts())
+    d.subheader("Sipas ditës së publikimit")
+    datat_e_publikimit = f["publikimi"].dropna()
+    if datat_e_publikimit.empty:
+        d.caption("S'ka datë të njohur publikimi për këta artikuj.")
+    else:
+        d.bar_chart(datat_e_publikimit.str[:10].value_counts().sort_index())
 
     st.subheader("Lista")
+    lista_artikujve = f.sort_values("data", ascending=False)[["publikimi", "burimi", "gjuha", "titulli", "url"]].copy()
+    lista_artikujve["publikimi"] = lista_artikujve["publikimi"].fillna("–")
+    lista_artikujve["url"] = lista_artikujve["url"].map(raporti.url_e_sigurt)
     st.dataframe(
-        f.sort_values("data", ascending=False)[["data", "burimi", "gjuha", "titulli", "url"]]
-        .assign(data=lambda x: x["data"].dt.tz_convert("Europe/Belgrade")),  # ora e Kosovës
+        lista_artikujve,
         column_config={"url": st.column_config.LinkColumn("URL"),
-                       "data": st.column_config.DatetimeColumn("Data", format="YYYY-MM-DD HH:mm")},
+                       "publikimi": st.column_config.TextColumn("Publikuar (ora e Kosovës)")},
         hide_index=True, width="stretch", height=400,
     )
 
     # Leximi i një artikulli: origjinali dhe përkthimi krah për krah
-    zgjedhje = f.sort_values("data", ascending=False).head(200)
+    zgjedhje = f.sort_values("data", ascending=False).head(200).set_index("id")
     if not zgjedhje.empty:
         id_zgjedhur = st.selectbox(
-            "Lexo artikullin", zgjedhje["id"],
-            format_func=lambda i: zgjedhje.set_index("id").loc[i, "titulli"] or str(i))
-        a = zgjedhje.set_index("id").loc[id_zgjedhur]
-        ora = ORA_E_URL.get(a["url"])
-        st.markdown(f"**Publikuar:** {ora.strftime('%Y-%m-%d %H:%M') if ora is not None else str(a['data'])[:10]}"
-                    f"  ·  [Hap burimin]({a['url']})")
+            "Lexo artikullin", zgjedhje.index,
+            format_func=lambda i: zgjedhje.at[i, "titulli"] or str(i))
+        a = zgjedhje.loc[id_zgjedhur]
+        url = raporti.url_e_sigurt(a["url"])
+        publikimi = a["publikimi"] if isinstance(a["publikimi"], str) else "e panjohur"
+        st.markdown(f"**Publikuar:** {publikimi}"
+                    + (f"  ·  [Hap burimin]({url})" if url else ""))
         # Gjurma e tekstit kur u mblodh: provon nëse portali e ndryshoi/fshiu lajmin më vonë
         if isinstance(a["hash_sha256"], str):  # pandas e jep NaN kur mungon
             h, b = st.columns([3, 1])
             h.caption(f"Hash SHA-256: `{a['hash_sha256'][:12]}…` · mbledhur më {a['mbledhur_me']} UTC")
-            if b.button("Verifiko tani", key=f"vf_{id_zgjedhur}"):
+            if a["lloji_tekstit"] != "plote" or not url:
+                b.caption("Krahasimi kërkon tekst të plotë nga faqja e burimit.")
+            elif b.button("Verifiko tani", key=f"vf_{id_zgjedhur}"):
                 with st.spinner("Po shkarkohet faqja..."):
-                    # Teksti është ende bruto vetëm nëse processor.py s'e ka pastruar/përkthyer
-                    bruto = a["teksti"] if not isinstance(a["teksti_perkthyer"], str) else None
-                    b.write(collector.verifiko(a["url"], a["hash_sha256"], bruto))
+                    bruto = a["raw_text"] if isinstance(a["raw_text"], str) else None
+                    b.write(collector.verifiko(url, a["hash_sha256"], bruto, lloji_tekstit=a["lloji_tekstit"]))
         else:
             st.caption("Pa hash: artikulli u përpunua para se të shtohej hash-i.")
         o, p = st.columns(2)
-        o.text_area("Origjinali", a["teksti"] or "", height=300)
+        o.text_area("Origjinali", a["teksti"] if isinstance(a["teksti"], str) else "", height=300, disabled=True)
         p.text_area("Përkthimi (EN)", a["teksti_perkthyer"] if isinstance(a["teksti_perkthyer"], str)
-                    else "Ende i papërkthyer", height=300)  # pandas jep NaN, jo None
+                    else "Ende i papërkthyer", height=300, disabled=True)
 
 # ---------------- Ekzekutimi i pipeline-it ----------------
 with tab_ekz:
     st.subheader("Ekzekuto tani")
     n = st.number_input("Sa artikuj të përkthehen dhe analizohen në një ekzekutim", 5, 500, 20, step=5,
                         help="Më shumë artikuj = më shumë kohë (rreth 1 minutë për artikull me modelin aktual).")
-    # Butoni është gjithmonë aktiv; bllokimi te ekzekuto.py s'lejon dy ekzekutime njëkohësisht
+    # Bllokimi te ekzekuto.py s'lejon dy ekzekutime njëkohësisht.
     if ekzekuto.po_punon():
         st.info(icon=":material/hourglass_top:", body="Pipeline-i po punon tani. Shiko log-un më poshtë; kur të mbarojë, kliko 'Rifresko të dhënat'.")
     if st.button("Ekzekuto tani", type="primary", disabled=ngrire, icon=":material/play_arrow:"):
@@ -851,14 +898,17 @@ with tab_ekz:
     st.subheader("Automatikisht")
     opsionet = {"Jo (vetëm me dorë)": 0, "Çdo 1 orë": 1, "Çdo 2 orë": 2, "Çdo 3 orë": 3,
                 "Çdo 6 orë": 6, "Çdo 12 orë": 12, "Çdo 24 orë": 24}
-    aktuale = ekzekuto.orari_aktual()
+    if not ekzekuto.WINDOWS:
+        st.info("Orari menaxhohet nga serveri. Ky kontroll përdor Windows Task Scheduler.")
+    aktuale = ekzekuto.orari_aktual() if ekzekuto.WINDOWS else None
     vlera = aktuale["ore"] if aktuale else 0
     zgjedhja = st.selectbox("Sa shpesh të ekzekutohet vetë", list(opsionet),
-                            index=list(opsionet.values()).index(vlera) if vlera in opsionet.values() else 0)
+                            index=list(opsionet.values()).index(vlera) if vlera in opsionet.values() else 0,
+                            disabled=ngrire or not ekzekuto.WINDOWS)
     if aktuale:
         st.caption(f"Aktiv: çdo {aktuale['ore']} orë, {aktuale['n']} artikuj. Punon edhe kur dashboard-i "
                    "është i mbyllur, por kompjuteri duhet të jetë ndezur dhe Ollama duke punuar.")
-    if st.button("Ruaj orarin", disabled=ngrire):
+    if st.button("Ruaj orarin", disabled=ngrire or not ekzekuto.WINDOWS):
         ore = opsionet[zgjedhja]
         ok, mesazhi = ekzekuto.vendos_orarin(ore, n) if ore else ekzekuto.hiq_orarin()
         (st.success if ok else st.error)(("Orari u ruajt." if ore else "Orari automatik u hoq.")

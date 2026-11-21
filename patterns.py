@@ -7,7 +7,7 @@ Rregulli:
 - Alarm nëse këtë javë ka >= 3 ngjarje DHE >= 2 herë mesataren.
 """
 from collections import Counter
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import db
 from correlator import gjej_vendin
@@ -18,35 +18,39 @@ DYSHEMEJA = 0.5
 
 
 def dita(s):
-    return datetime.strptime(str(s)[:10], "%Y-%m-%d").date()
+    try:
+        return datetime.strptime(str(s)[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return None
 
 
 def histori_e_mjaftueshme(fillimi_mbledhjes, sot):
     """Mesatarja ka kuptim vetëm nëse kemi mbledhur lajme gjatë gjithë 5 javëve."""
-    return dita(fillimi_mbledhjes) <= dita(sot) - timedelta(days=6 + 28)
+    fillimi, deri = dita(fillimi_mbledhjes), dita(sot)
+    return bool(fillimi and deri and fillimi <= deri - timedelta(days=6 + 28))
 
 
 def rritjet(ngjarjet, sot=None, fillimi_mbledhjes=None):
     """ngjarjet: lista me fusha 'data' dhe 'vendi'. Kthen alarmet, më i forti i pari.
     fillimi_mbledhjes: kur filloi mbledhja; pa 5 javë histori s'ka alarm (mesatarja s'dihet)."""
-    ngjarjet = [e for e in ngjarjet if e["data"]]
+    ngjarjet = [(d, e) for r in ngjarjet if (e := dict(r)).get("statusi") != "e hedhur poshtë"
+                and (d := dita(e.get("data")))]
     if not ngjarjet:
         return []
-    sot = dita(sot) if sot else max(dita(e["data"]) for e in ngjarjet)
-    if fillimi_mbledhjes and not histori_e_mjaftueshme(fillimi_mbledhjes, sot):
+    sot = dita(sot) if sot else date.today()
+    if not histori_e_mjaftueshme(fillimi_mbledhjes, sot):
         return []
     fillimi_javes = sot - timedelta(days=6)
     fillimi_bazes = fillimi_javes - timedelta(days=28)
 
     kete_jave, baza, emrat = Counter(), Counter(), {}
-    for e in ngjarjet:
+    for d, e in ngjarjet:
         # "Mitrovicë e Veriut" dhe "Mitrovica" = një komunë (vendi mund të mungojë / NaN nga pandas)
-        teksti = e["vendi"] if isinstance(e["vendi"], str) else ""
+        teksti = e["vendi"] if isinstance(e.get("vendi"), str) else ""
         vendi = gjej_vendin(teksti)[0]
         if not vendi:
             continue
         emrat.setdefault(vendi, Counter())[teksti] += 1  # emri më i shpeshtë, për shfaqje
-        d = dita(e["data"])
         if fillimi_javes <= d <= sot:
             kete_jave[vendi] += 1
         elif fillimi_bazes <= d < fillimi_javes:
@@ -76,18 +80,26 @@ if __name__ == "__main__":
            [ngj(f"2026-11-{d:02d}", "Mitrovicë e Veriut") for d in (3, 10, 15, 16, 17, 18, 19)] + \
            [ngj("2026-11-19", "Prishtina")] * 2 + \
            [ngj(f"2026-11-{d:02d}", "Peja") for d in (1, 2, 4, 5, 6, 7, 8, 9, 15, 16, 17)]
-    a = rritjet(test, "2026-11-19")
+    a = rritjet(test, "2026-11-19", "2026-10-01")
     assert [x["vendi"] for x in a] == ["mitrovic"], a  # Prishtina ka vetëm 2; Peja s'është rritje
     assert a[0]["kete_jave"] == 5 and a[0]["mesatarja"] == 1.0, a  # baza: 4 ngjarje / 4 javë
     # Pas heshtjes: 3 ngjarje pa asnjë më parë -> dyshemeja 0.5, raporti 6
-    a = rritjet([ngj("2026-11-19", "Gjilan")] * 3)
+    a = rritjet([ngj("2026-11-19", "Gjilan")] * 3, "2026-11-19", "2026-10-01")
     assert a[0]["mesatarja"] == 0.5 and a[0]["raporti"] == 6.0, a
     assert rritjet([]) == []
     # Pa 5 javë histori mbledhjeje s'ka alarm, edhe kur numrat duken si rritje
-    assert rritjet([ngj("2026-11-19", "Gjilan")] * 3, fillimi_mbledhjes="2026-11-01") == []
-    assert rritjet([ngj("2026-11-19", "Gjilan")] * 3, fillimi_mbledhjes="2026-10-01")
+    assert rritjet([ngj("2026-11-19", "Gjilan")] * 3, "2026-11-19", "2026-11-01") == []
+    assert rritjet([ngj("2026-11-19", "Gjilan")] * 3, "2026-11-19", "2026-10-01")
+    assert rritjet([ngj("2026-11-19", "Gjilan")] * 3) == []
+    assert rritjet([ngj("e panjohur", "Gjilan")], fillimi_mbledhjes="2026-10-01") == []
+    palejura = [dict(ngj("2026-11-19", "Gjilan"), statusi="e hedhur poshtë")] * 3
+    assert rritjet(palejura, "2026-11-19", "2026-10-01") == []
+    e_vjeter = (date.today() - timedelta(days=50)).isoformat()
+    fillimi = (date.today() - timedelta(days=90)).isoformat()
+    assert rritjet([ngj(e_vjeter, "Gjilan")] * 3, fillimi_mbledhjes=fillimi) == []
 
+    from raporti import ngjarjet
     fillimi = db.fillimi_i_mbledhjes()
-    alarmet = rritjet(db.ngjarjet(), fillimi_mbledhjes=fillimi)
+    alarmet = rritjet(ngjarjet(), fillimi_mbledhjes=fillimi)
     print("\n".join(pershkrim(x) for x in alarmet) or
           f"S'ka rritje të pazakonta (mbledhja filloi më {str(fillimi)[:10]}).")

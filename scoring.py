@@ -315,10 +315,10 @@ def vlereso(det):
     return pike, arsyet
 
 
-def vlereso_te_gjitha():
+def vlereso_te_gjitha(*, perdor_modelin=True):
     """Llogarit besueshmërinë për çdo ngjarje në bazë. Kthen numrin e ngjarjeve."""
     ngjarjet = db.ngjarjet()
-    modeli = lexo_modelin(MODELI)
+    modeli = lexo_modelin(MODELI) if perdor_modelin else None
     for e in ngjarjet:
         det = json.loads(e["detajet_json"] or "{}")
         pasuro_burimet(e, det)

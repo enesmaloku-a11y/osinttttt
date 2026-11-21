@@ -35,26 +35,43 @@ def pastro(teksti):
 
 
 def ndaj_ne_copa(teksti):
-    """Ndan tekstin në paragrafë deri në COPA karaktere, që modeli të mos humbasë."""
-    copa, aktuale = [], ""
-    for p in teksti.split("\n"):
-        if aktuale and len(aktuale) + len(p) > COPA:
-            copa.append(aktuale)
-            aktuale = ""
-        aktuale += p + "\n"
-    if aktuale.strip():
-        copa.append(aktuale)
+    """Ndan tekstin në copa të kufizuara, duke preferuar fund paragrafin ose fjalën."""
+    copa = []
+    teksti = teksti.strip()
+    while len(teksti) > COPA:
+        kufiri = teksti.rfind("\n", 0, COPA + 1)
+        if kufiri <= 0:
+            kufiri = teksti.rfind(" ", 0, COPA + 1)
+        kufiri = kufiri if kufiri > 0 else COPA
+        copa.append(teksti[:kufiri].rstrip())
+        teksti = teksti[kufiri:].lstrip()
+    if teksti:
+        copa.append(teksti)
     return copa
 
 
-def ollama_gati():
-    """True nëse Ollama lokal përgjigjet (kontroll i shpejtë para pipeline-it)."""
-    baza = OLLAMA_URL.split("/api/")[0]
+def gabimi_ollama():
+    """Kthen arsyen e mosgatishmërisë ose None kur gjendet modeli i konfiguruar."""
+    baza = OLLAMA_URL.rsplit("/api/", 1)[0].rstrip("/")
     try:
-        urllib.request.urlopen(f"{baza}/api/tags", timeout=5)
-        return True
-    except Exception:
-        return False
+        with urllib.request.urlopen(f"{baza}/api/tags", timeout=5) as pergjigjja:
+            katalogu = json.load(pergjigjja)
+    except OSError:
+        return "Ollama nuk po përgjigjet. Nise me 'ollama serve' dhe provo përsëri."
+    except ValueError:
+        return "Përgjigjja nga Ollama /api/tags është e pavlefshme."
+    modelet = katalogu.get("models") if isinstance(katalogu, dict) else None
+    if not isinstance(modelet, list):
+        return "Përgjigjja nga Ollama /api/tags nuk përmban listën e modeleve."
+    for modeli in modelet:
+        emri = (modeli.get("model") or modeli.get("name")) if isinstance(modeli, dict) else None
+        if isinstance(emri, str) and emri.removesuffix(":latest") == MODELI.removesuffix(":latest"):
+            return None
+    return f"Modeli '{MODELI}' mungon në Ollama. Kontrollo OLLAMA_MODEL ose instalo modelin."
+
+
+def ollama_gati():
+    return gabimi_ollama() is None
 
 
 def pyet_ollama(prompt, si_json=False):
@@ -71,7 +88,10 @@ def pyet_ollama(prompt, si_json=False):
     for prova in range(3):
         try:
             with urllib.request.urlopen(req, timeout=300) as r:
-                pergjigja = json.loads(r.read())["response"]
+                rezultati = json.load(r)
+            pergjigja = rezultati.get("response") if isinstance(rezultati, dict) else None
+            if not isinstance(pergjigja, str) or not pergjigja.strip():
+                raise ValueError("Ollama ktheu përgjigje bosh ose të pavlefshme.")
             break
         except urllib.error.HTTPError as e:
             if e.code < 500 or prova == 2:
@@ -81,7 +101,10 @@ def pyet_ollama(prompt, si_json=False):
                 raise
         time.sleep(5 * (prova + 1))
     # modelet "reasoning" ndonjëherë e shtojnë mendimin në tekst; hiqe
-    return re.sub(r"<think>.*?</think>", "", pergjigja, flags=re.S).strip()
+    pergjigja = re.sub(r"<think>.*?</think>", "", pergjigja, flags=re.S).strip()
+    if not pergjigja:
+        raise ValueError("Ollama ktheu vetëm tekst mendimi.")
+    return pergjigja
 
 
 def perkthe(teksti, gjuha):
