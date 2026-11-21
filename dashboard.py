@@ -114,8 +114,8 @@ with tab_ngj:
     for _, e in ngjarjet.dropna(subset=["lat", "lon"]).iterrows():
         sv = e["det"].get("saktesia_vendit")
         # Titulli vjen nga lajmi/modeli. Folium e fut në një template literal JS (`...`),
-        # ndaj përveç HTML-së neutralizohen edhe ` dhe $ (${...})
-        titulli = html.escape(e["titulli"]).replace("`", "&#96;").replace("$", "&#36;")
+        # ndaj përveç HTML-së neutralizohen edhe \\, ` dhe $ (${...}, \u{...})
+        titulli = html.escape(e["titulli"]).replace("\\", "&#92;").replace("`", "&#96;").replace("$", "&#36;")
         popup = (f"{titulli}<br>Besueshmëria: {e['besueshmeria']}<br>"
                  f"Vendi: {SAKTESIA[sv]} · Vendimi: {e['statusi']}")
         if sv == "region":
