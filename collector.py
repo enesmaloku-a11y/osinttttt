@@ -581,6 +581,11 @@ def kontrollo():
                  ("Hibrid.info", "Ushtarët serbë në gatishmëri"),
                  ("Policia e Kosovës", "Sulm ndaj personit zyrtar në Zveçan")):
         assert ka_lidhje(b, t), t
+    import correlator
+    for b, u in FEEDS.items():  # emri dhe domeni përputhen te FEEDS, BURIMET_INFO dhe correlator
+        assert correlator.DOMENET.get(hosti(u)) == b, b
+        assert b not in BURIMET_INFO or BURIMET_INFO[b]["domeni"] == hosti(u), b
+    assert domeni_i_lejuar("https://www.rts.rs/a") == "rts.rs" and domeni_i_lejuar("https://evil.example/a") is None
     # Njoftimi policor jashtë veriut bie: vepër e zakonshme, pa spirancë dhe pa term taksonomie
     for b, t in (("Policia e Kosovës", "Sulm ndaj personit zyrtar në Ferizaj"), ("RTS", "veri"),
                  ("RTS", "Kiša na severu Srbije"), ("Novosti", "Cene goriva od ponedeljka niže"),
@@ -616,11 +621,6 @@ def kontrollo():
         assert i["gjuha"] in ("sr", "sq", "en") and i["lloji"] in ("media", "zyrtar")
         assert i["vendi"] in ("RS", "XK") and b in FEEDS
         assert b in scoring.MEDIAT
-    import correlator
-    for b, u in FEEDS.items():  # emri dhe domeni përputhen te FEEDS, BURIMET_INFO dhe correlator
-        assert correlator.DOMENET.get(hosti(u)) == b, b
-        assert b not in BURIMET_INFO or BURIMET_INFO[b]["domeni"] == hosti(u), b
-    assert domeni_i_lejuar("https://www.rts.rs/a") == "rts.rs" and domeni_i_lejuar("https://evil.example/a") is None
     assert GDELT_PAUZA == 30
     nxirr_vjeter, pergatit_vjeter, ruaj_vjeter = nxirr_tekstin, pergatit, db.ruaj_artikull
     try:
