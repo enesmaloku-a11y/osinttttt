@@ -53,7 +53,11 @@ SHENJESTRAT_RE = {
 def lidhu():
     con = sqlite3.connect(DB)
     con.execute("CREATE TABLE IF NOT EXISTS postimet (id INTEGER PRIMARY KEY, koha TEXT NOT NULL, "
-                "teksti TEXT NOT NULL)")
+                "teksti TEXT NOT NULL, burimi TEXT NOT NULL DEFAULT 'Forum demo')")
+    try:  # bazë e vjetër pa kolonën "burimi"
+        con.execute("ALTER TABLE postimet ADD COLUMN burimi TEXT NOT NULL DEFAULT 'Forum demo'")
+    except sqlite3.OperationalError:
+        pass
     return con
 
 
@@ -63,19 +67,61 @@ def maskoj(t):
                               extractor.fshi_emrat(m.group()), t)
 
 
-def shto_postim(teksti):
+def shto_postim(teksti, burimi=MEDIUMI):
     """Ruan postimin me emrat e personave të maskuar; kthen id ose None për tekst bosh."""
     teksti = maskoj(" ".join(str(teksti or "").split()))[:MAKS_POSTIMI]
     if not teksti:
         return None
     with closing(lidhu()) as con, con:
-        return con.execute("INSERT INTO postimet (koha, teksti) VALUES (?, ?)",
-                           (datetime.now().isoformat(timespec="seconds"), teksti)).lastrowid
+        return con.execute("INSERT INTO postimet (koha, teksti, burimi) VALUES (?, ?, ?)",
+                           (datetime.now().isoformat(timespec="seconds"), teksti, burimi)).lastrowid
 
 
 def postimet():
     with closing(lidhu()) as con:
-        return con.execute("SELECT id, koha, teksti FROM postimet ORDER BY id DESC").fetchall()
+        return con.execute("SELECT id, koha, teksti, burimi FROM postimet ORDER BY id DESC").fetchall()
+
+
+# Telegram: VETËM kanali ynë privat i demos, ku boti është admin. Asnjë kanal i huaj, asnjë scraping.
+# Token-i merret nga variabla e mjedisit TELEGRAM_BOT_TOKEN dhe s'shkruhet kurrë në kod ose log.
+# TELEGRAM_CHAT_ID (opsional) e kufizon te një kanal i vetëm.
+TELEGRAM = "Telegram:kanali_demo"  # "Telegram:" -> rreziku.py e trajton si kanal social (maks. D)
+
+
+def teksti_nga_update(u, chat_id=None):
+    """Teksti i një postimi në kanal nga një update i Bot API, ose None."""
+    p = u.get("channel_post") if isinstance(u, dict) else None
+    if not isinstance(p, dict) or (p.get("chat") or {}).get("type") != "channel":
+        return None
+    if chat_id and str((p.get("chat") or {}).get("id")) != str(chat_id):
+        return None
+    t = p.get("text") or p.get("caption")
+    return t if isinstance(t, str) and t.strip() else None
+
+
+def degjo_telegram(token, chat_id, gjendja):
+    """Long polling te getUpdates; çdo postim i ri në kanal ruhet si postim demo. S'ndalet kurrë."""
+    import json
+    import urllib.parse
+    import urllib.request
+    offset = None
+    while True:
+        try:
+            q = {"timeout": 25, "allowed_updates": json.dumps(["channel_post"])}
+            if offset is not None:
+                q["offset"] = offset
+            url = f"https://api.telegram.org/bot{token}/getUpdates?{urllib.parse.urlencode(q)}"
+            with urllib.request.urlopen(url, timeout=35) as r:
+                pergjigja = json.loads(r.read().decode("utf-8"))
+            for u in pergjigja.get("result", []):
+                offset = u["update_id"] + 1
+                t = teksti_nga_update(u, chat_id)
+                if t:
+                    shto_postim(t, TELEGRAM)
+            gjendja.update(lidhur=True, gabim=None)
+        except Exception as e:  # pa token në mesazh: vetëm lloji i gabimit
+            gjendja.update(lidhur=False, gabim=type(e).__name__)
+            time.sleep(5)
 
 
 def gjuha(t):
@@ -106,18 +152,18 @@ def kategoria_e(t):
     return kat, gjetje[kat]
 
 
-def vlereso_postimin(id_, koha, teksti):
+def vlereso_postimin(id_, koha, teksti, burimi=MEDIUMI):
     """Kategoria, aktori, shenjestrat dhe rreziku për një postim, vetëm me rregulla."""
     kat, provat = kategoria_e(teksti)
     aktori = next((a for a, r in AKTORET_RE.items() if re.search(r, teksti, re.I)), "i_panjohur")
     shenjestrat = [s for s, r in SHENJESTRAT_RE.items() if re.search(r, teksti, re.I)]
     det = {"kategoria": kat, "aktori": aktori, "shenjestrat": shenjestrat,
-           "lidhje_me_fsk": "fsk" in shenjestrat, "mediat": [MEDIUMI], "gjuhet": [gjuha(teksti)]}
+           "lidhje_me_fsk": "fsk" in shenjestrat, "mediat": [burimi], "gjuhet": [gjuha(teksti)]}
     e = {"id": id_, "data": koha[:10], "vendi": teksti, "titulli": teksti, "besueshmeria": None,
          "burimet": f'["demo://{id_}"]', "lloji": None}
     r = rreziku.vlereso(e, det, sot=koha[:10])
     siguri = kat != "tjeter" or bool(extractor.FJALE_KYCE.search(teksti))
-    return {"id": id_, "koha": koha, "teksti": teksti, "kategoria": kat, "provat": provat,
+    return {"id": id_, "koha": koha, "teksti": teksti, "burimi": burimi, "kategoria": kat, "provat": provat,
             "aktori": aktori, "shenjestrat": shenjestrat, "vendi": gjej_vendin(teksti)[0],
             "gjuha": det["gjuhet"][0], "siguri": siguri, **r}
 
@@ -146,14 +192,30 @@ def app():
             teksti = st.text_area("Shkruaj një postim", height=120)
             if st.form_submit_button("Posto") and shto_postim(teksti):
                 st.success("U postua.")
-        for _, koha, t in postimet():
-            st.markdown(f"**anonim** · {koha[11:16]}\n\n{t}")
+        for _, koha, t, burimi in postimet():
+            st.markdown(f"**anonim** · {koha[11:16]} · {burimi}\n\n{t}")
             st.divider()
         return
 
-    st.title("Zbulimi live: forumi demo")
-    st.caption("Pa model dhe pa internet: kategoria nga kercenimet.py, rreziku nga rreziku.py. "
+    @st.cache_resource
+    def nis_telegram():
+        """Nis një herë dëgjimin e kanalit demo, vetëm nëse token-i është vendosur."""
+        import threading
+        gjendja = {"aktiv": bool(os.environ.get("TELEGRAM_BOT_TOKEN")), "lidhur": False, "gabim": None}
+        if gjendja["aktiv"]:
+            threading.Thread(target=degjo_telegram, daemon=True, args=(
+                os.environ["TELEGRAM_BOT_TOKEN"], os.environ.get("TELEGRAM_CHAT_ID"), gjendja)).start()
+        return gjendja
+
+    tg = nis_telegram()
+    st.title("Zbulimi live: forumi demo dhe kanali Telegram i demos")
+    st.caption("Kategoria nga kercenimet.py, rreziku nga rreziku.py, me rregulla dhe pa model. "
                "Rreziku = sa e rëndë do ishte nëse është e vërtetë; burimi i panjohur → verifiko së pari.")
+    if not tg["aktiv"]:
+        st.caption("Telegram: joaktiv (s'ka TELEGRAM_BOT_TOKEN). Forumi demo punon pa internet.")
+    else:
+        st.caption("Telegram: " + ("🟢 i lidhur me kanalin demo" if tg["lidhur"] else
+                                   f"🟡 duke u lidhur{' (' + tg['gabim'] + ')' if tg['gabim'] else ''}"))
     if st.button("Fshi postimet e demos"):
         with closing(lidhu()) as con, con:
             con.execute("DELETE FROM postimet")
@@ -164,9 +226,9 @@ def app():
 
     @st.fragment(run_every=2)
     def lista():
-        for i, (id_, koha, t) in enumerate(postimet()):
+        for i, (id_, koha, t, burimi) in enumerate(postimet()):
             pare.setdefault(id_, time.time())
-            v = vlereso_postimin(id_, koha, t)
+            v = vlereso_postimin(id_, koha, t, burimi)
             sek = max(0.0, pare[id_] - datetime.fromisoformat(koha).timestamp())
             if not v["siguri"]:
                 st.markdown(f"⚪ **Pa shenja sigurie** · {t[:120]}")
@@ -176,7 +238,8 @@ def app():
                     f"({r['niveli']}) · {kercenimet.emri(v['kategoria'])} · Admiralty {a['kodi']}")
             with st.expander(koka, expanded=i == 0):
                 st.markdown(f"> {t}")
-                st.write(f"**Zbuluar:** {sek:.0f} s pas postimit · **Gjuha:** {v['gjuha']} · "
+                st.write(f"**Burimi:** {'Telegram (kanali ynë i demos)' if burimi == TELEGRAM else burimi} · "
+                         f"**Zbuluar:** {sek:.0f} s pas postimit · **Gjuha:** {v['gjuha']} · "
                          f"**Vendi:** {(v['vendi'] or 'i panjohur').capitalize()} · "
                          f"**Aktori:** {kercenimet.AKTORET.get(v['aktori'])} · "
                          f"**Shenjestrat:** {', '.join(kercenimet.SHENJESTRAT[s] for s in v['shenjestrat']) or '–'}")
@@ -207,6 +270,14 @@ def kontrollet():
     for t in ("Kosova fiton ndeshjen miqësore", "Ekstremisht nxehtë sot në Prishtinë"):
         assert not vlereso_postimin(4, sot, t)["siguri"], t
     assert gjuha("Policija je uhapsila dvojicu") == "sr" and gjuha("Policia arrestoi dy persona") == "sq"
+    # Telegram: vetëm postimet me tekst në kanal (dhe në kanalin e lejuar), pa rrjet
+    kanal = {"update_id": 7, "channel_post": {"chat": {"id": -100123, "type": "channel"}, "text": "TEST: dron"}}
+    assert teksti_nga_update(kanal) == "TEST: dron" and teksti_nga_update(kanal, "-100123") == "TEST: dron"
+    assert teksti_nga_update(kanal, "-100999") is None                       # kanal tjetër
+    assert teksti_nga_update({"message": {"chat": {"type": "private"}, "text": "x"}}) is None
+    assert teksti_nga_update({"channel_post": {"chat": {"type": "channel"}, "photo": []}}) is None
+    tg = vlereso_postimin(5, sot, "TEST: Ushtria e Serbisë po lëviz tanke drejt Jarinjës", TELEGRAM)
+    assert tg["admiralty"]["kodi"] == "F6" and tg["prioriteti"] == "URGJENTE", tg["admiralty"]
     # Maskimi: personat maskohen, vendet jo
     assert maskoj("Banorët në Zubin Potok dhe Filan Fisteku") == "Banorët në Zubin Potok dhe [person]"
     print("Kontrollet kaluan: 5 raste demo (en, sr-cirilik, sq, 2 pa kërcënim).")
