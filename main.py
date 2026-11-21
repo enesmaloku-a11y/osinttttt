@@ -14,6 +14,7 @@ import correlator
 import db
 import extractor
 import kontekst_dezinformim
+import kontekst_kibernetik
 import patterns
 import processor
 import scoring
@@ -38,6 +39,7 @@ def main(n):
     grupe = correlator.korrelo()
     # Para besueshmërisë: konteksti s'e ndryshon, por scoring.py e ruan te detajet. S'bie kurrë.
     kontekst_dezinformim.pasuro_te_gjitha()
+    kontekst_kibernetik.pasuro_te_gjitha()
 
     print("5/5 Besueshmëria...")
     scoring.vlereso_te_gjitha()
