@@ -38,6 +38,15 @@ KONTROLLET = [
     ("dashboard.py", ["-c", "from streamlit.testing.v1 import AppTest; "
                          "at = AppTest.from_file('dashboard.py', default_timeout=90).run(); "
                          "assert not at.exception, [x.value for x in at.exception]"]),
+    # Si në Streamlit Cloud: pa OSINT_DB krijon vetë demo.db, dhe s'lejon nisjen e pipeline-it
+    ("dashboard.py (cloud)", ["-c", "import os, sqlite3; os.environ.pop('OSINT_DB'); os.environ['OSINT_CLOUD'] = '1'; "
+                                   "from streamlit.testing.v1 import AppTest; "
+                                   "at = AppTest.from_file('dashboard.py', default_timeout=120).run(); "
+                                   "assert not at.exception, [x.value for x in at.exception]; "
+                                   "b = [x for x in at.button if 'Ekzekuto' in x.label or 'orarin' in x.label]; "
+                                   "assert len(b) == 3 and all(x.disabled for x in b), [(x.label, x.disabled) for x in b]; "
+                                   "n = sqlite3.connect('demo.db').execute('SELECT COUNT(*) FROM articles').fetchone()[0]; "
+                                   "assert n > 0 and len(at.expander) > 0, (n, len(at.expander))"]),
 ]
 
 
@@ -54,10 +63,6 @@ def main():
         for emri, komanda in KONTROLLET:
             if not (kopja / emri.split()[0]).exists():
                 print(f"  -   {emri} (s'ekziston në këtë degë)")
-                continue
-            if emri == "dashboard.py" and os.name != "nt":
-                # ekzekuto.py përdor msvcrt, që ekziston vetëm në Windows
-                print(f"  -   {emri} (niset vetëm në Windows)")
                 continue
             r = subprocess.run([sys.executable, *komanda], cwd=kopja, env=env,
                                capture_output=True, encoding="utf-8", errors="replace", timeout=300)
