@@ -90,6 +90,21 @@ PAMJET = {"Kosova": ([[41.85, 20.00], [43.27, 21.80]], 8), "Rajoni": ([[40.80, 1
 # sa pasiguria (metra). "village" (fshat ose vend i saktë) vizatohet si pikë.
 RREZET = {"region": 15000, "municipality": 5000}
 
+# Ora e publikimit për çdo URL, me orën e Kosovës. Ngjarjet kanë vetëm datë, ndaj ora vjen nga artikulli.
+# Artikujt që kanë vetëm datë (pa orë) s'futen, që të mos dalë një orë e shpikur (00:00).
+ORA_E_URL = {}
+for _u, _d in zip(artikujt["url"], artikujt["data"]):
+    _t = pd.to_datetime(_d, utc=True, errors="coerce") if isinstance(_d, str) and len(_d) > 10 else pd.NaT
+    if pd.notna(_t):
+        ORA_E_URL[_u] = _t.tz_convert("Europe/Belgrade")
+
+
+def koha_e(e):
+    """Data dhe ora e lajmit: publikimi më i hershëm i burimeve. Pa orë të njohur, vetëm data e ngjarjes."""
+    orat = [ORA_E_URL[u] for u in e["burimet_l"] if u in ORA_E_URL]
+    return min(orat).strftime("%Y-%m-%d %H:%M") if orat else str(e.get("data") or "–")[:10]
+
+
 artikujt["data"] = pd.to_datetime(artikujt["data"], utc=True, errors="coerce")
 # Të gjitha domenet e GDELT bashkohen në një grup që grafiku të mbetet i lexueshëm
 artikujt["grupi"] = artikujt["burimi"].where(~artikujt["burimi"].str.startswith("GDELT:"), "GDELT")
@@ -160,7 +175,7 @@ def kartela(e, skeda):
     det, p = e["det"], raporti.prioriteti(e)
     pike, niveli, arsyet = raporti.rreziku(e)
     b = raporti.besueshmeria(e)
-    koka = (f"{IKONAT[e['statusi']]} {SHENJA[p]} {str(e['data'])[:10]} · {raporti.pastro(e['titulli'], 120)}"
+    koka = (f"{IKONAT[e['statusi']]} {SHENJA[p]} {koha_e(e)} · {raporti.pastro(e['titulli'], 120)}"
             f" · rreziku {pike if pike is not None else '–'} · besueshmëria {perqind(b)}")
     with st.expander(koka):
         kodi = raporti.admiralty(e)
@@ -177,7 +192,7 @@ def kartela(e, skeda):
                  f"  ·  **Zona:** {'rajonale' if det.get('rajonale') else 'Kosovë'}")
         st.write(f"**Lloji:** {e.get('lloji') or '-'}  ·  **Vendi:** {raporti.pastro(e.get('vendi'), 60) or '-'} "
                  f"({SAKTESIA.get(det.get('saktesia_vendit'), 'e panjohur')})  ·  "
-                 f"**Data:** {SAKTESIA.get(det.get('saktesia_dates'), 'e panjohur')}  ·  **Gjuha:** {e.get('gjuha')}")
+                 f"**Data dhe ora:** {koha_e(e)} (saktësia e datës: {SAKTESIA.get(det.get('saktesia_dates'), 'e panjohur')})  ·  **Gjuha:** {e.get('gjuha')}")
         try:
             bosh = json.loads(e.get("boshllequet") or "[]")
         except ValueError:
@@ -241,7 +256,7 @@ def ngjarjet_e_fundit(ngjarjet, sa=10):
         p, b = raporti.prioriteti(e), e["burimet_l"]
         burimi = (burimi_i_url.get(b[0]) or urlparse(str(b[0])).hostname or "–") if b else "–"
         rreshtat.append({"Prioriteti": f"{SHENJA.get(p, SHENJA[None])} {p or 'i pallogaritur'}",
-                         "Data": str(data_e(e) or "–"), "Ngjarja": raporti.rresht(e["titulli"], 110),
+                         "Data dhe ora": koha_e(e), "Ngjarja": raporti.rresht(e["titulli"], 110),
                          "Burimi": burimi + (f" (+{len(b) - 1})" if len(b) > 1 else "")})
     return pd.DataFrame(rreshtat)
 
@@ -254,7 +269,7 @@ def grafiku_matrices(ngjarjet):
         if pike is None or b is None or p is None:
             pa_vlera += 1
             continue
-        pikat.append({"titulli": raporti.rresht(e["titulli"], 120), "data": str(data_e(e) or "–"),
+        pikat.append({"titulli": raporti.rresht(e["titulli"], 120), "data": koha_e(e),
                       "prioriteti": p, "rreziku": pike,
                       "besueshmeria": b, "kategoria": raporti.rresht(raporti.kategoria(e), 80),
                       "burime": len(e["burimet_l"])})
@@ -280,7 +295,7 @@ def grafiku_matrices(ngjarjet):
         x=x, y=y, color=alt.Color("prioriteti:N", title="Prioriteti", scale=NGJYRAT_MATRICES),
         size=alt.Size("burime:Q", title="Burime", scale=alt.Scale(range=[60, 400], zero=False),
                       legend=alt.Legend(format="d", tickMinStep=1)),
-        tooltip=[alt.Tooltip("titulli:N", title="Ngjarja"), alt.Tooltip("data:N", title="Data"),
+        tooltip=[alt.Tooltip("titulli:N", title="Ngjarja"), alt.Tooltip("data:N", title="Data dhe ora"),
                  alt.Tooltip("prioriteti:N", title="Prioriteti"), alt.Tooltip("rreziku:Q", title="Rreziku"),
                  alt.Tooltip("besueshmeria:Q", title="Besueshmëria", format=".0%"),
                  alt.Tooltip("kategoria:N", title="Kategoria")])
@@ -447,11 +462,11 @@ with tab_ngj:
         p, det = raporti.prioriteti(e), e["det"]
         pike = raporti.rreziku(e)[0]
         sv = det.get("saktesia_vendit")
-        popup = (f"{siguro(raporti.rresht(e['titulli']))}<br>Prioriteti: {siguro(p or '–')} · "
+        popup = (f"{siguro(raporti.rresht(e['titulli']))}<br>Data dhe ora: {siguro(koha_e(e))}<br>Prioriteti: {siguro(p or '–')} · "
                  f"Rreziku: {siguro(pike if pike is not None else '–')}<br>Besueshmëria: "
                  f"{siguro(perqind(raporti.besueshmeria(e)))} · Vendi: {siguro(SAKTESIA.get(sv, 'e panjohur'))}"
                  f"<br>Vendimi: {siguro(e['statusi'])}")
-        tooltip = siguro(raporti.rresht(e["titulli"], 100))
+        tooltip = siguro(f"{koha_e(e)} · {raporti.rresht(e['titulli'], 100)}")
         ngjyra = NGJYRA_HARTE.get(p, "lightgray")
         # Pa saktësi të dhënë, koordinatat vijnë nga lista e komunave: trajtohen si komunë
         rreze = RREZET.get(sv or "municipality")
@@ -478,7 +493,7 @@ with tab_ngj:
         # Kronologjia: një pikë për çdo ngjarje, sipas datës dhe kategorisë
         st.subheader("Kronologjia")
         k = pd.DataFrame([{
-            "dita": str(e["data"])[:10], "kategoria": raporti.rresht(raporti.kategoria(e), 80),
+            "dita": str(e["data"])[:10], "ora": koha_e(e), "kategoria": raporti.rresht(raporti.kategoria(e), 80),
             "prioriteti": raporti.prioriteti(e) or "i pallogaritur",
             "titulli": raporti.rresht(e["titulli"], 120), "burime": len(e["burimet_l"]),
             "besueshmeria": perqind(raporti.besueshmeria(e)),
@@ -494,7 +509,7 @@ with tab_ngj:
             size=alt.Size("burime:Q", title="Burime", scale=alt.Scale(range=[80, 500], zero=False),
                           legend=alt.Legend(format="d", tickMinStep=1)),
             color=alt.Color("prioriteti:N", title="Prioriteti", scale=NGJYRAT_PRIORITETIT),
-            tooltip=[alt.Tooltip("dita:T", title="Data"), alt.Tooltip("titulli:N", title="Ngjarja"),
+            tooltip=[alt.Tooltip("ora:N", title="Data dhe ora"), alt.Tooltip("titulli:N", title="Ngjarja"),
                      alt.Tooltip("prioriteti:N", title="Prioriteti"), alt.Tooltip("rreziku:Q", title="Rreziku"),
                      alt.Tooltip("besueshmeria:N", title="Besueshmëria"), alt.Tooltip("burime:Q", title="Burime")],
         )
@@ -619,7 +634,8 @@ with tab_art:
 
     st.subheader("Lista")
     st.dataframe(
-        f.sort_values("data", ascending=False)[["data", "burimi", "gjuha", "titulli", "url"]],
+        f.sort_values("data", ascending=False)[["data", "burimi", "gjuha", "titulli", "url"]]
+        .assign(data=lambda x: x["data"].dt.tz_convert("Europe/Belgrade")),  # ora e Kosovës
         column_config={"url": st.column_config.LinkColumn("URL"),
                        "data": st.column_config.DatetimeColumn("Data", format="YYYY-MM-DD HH:mm")},
         hide_index=True, use_container_width=True, height=400,
@@ -632,7 +648,9 @@ with tab_art:
             "Lexo artikullin", zgjedhje["id"],
             format_func=lambda i: zgjedhje.set_index("id").loc[i, "titulli"] or str(i))
         a = zgjedhje.set_index("id").loc[id_zgjedhur]
-        st.markdown(f"[Hap burimin]({a['url']})")
+        ora = ORA_E_URL.get(a["url"])
+        st.markdown(f"**Publikuar:** {ora.strftime('%Y-%m-%d %H:%M') if ora is not None else str(a['data'])[:10]}"
+                    f"  ·  [Hap burimin]({a['url']})")
         # Gjurma e tekstit kur u mblodh: provon nëse portali e ndryshoi/fshiu lajmin më vonë
         if isinstance(a["hash_sha256"], str):  # pandas e jep NaN kur mungon
             h, b = st.columns([3, 1])
