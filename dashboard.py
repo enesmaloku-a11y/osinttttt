@@ -601,7 +601,8 @@ with tab_vle:
     rm = lexo_json(RAPORTI_MODELIT)
     if isinstance(rm, dict) and isinstance(rm.get("metrikat"), dict):
         st.caption(f"Trajnuar mbi {rm.get('n', '?')} vendime të analistit ({rm.get('n_pozitive', '?')} të "
-                   f"konfirmuara). Mëson nga çdo vendim i ri. {rm.get('rekomandim', '')}")
+                   f"konfirmuara). Vendimet e reja hyjnë vetëm kur modeli ritrajnohet me "
+                   f"`python trajno.py`. {rm.get('rekomandim', '')}")
         st.dataframe(pd.DataFrame([{"Modeli": k, **{x: y for x, y in v.items() if isinstance(y, (int, float))}}
                                    for k, v in rm["metrikat"].items() if isinstance(v, dict)]),
                      hide_index=True)

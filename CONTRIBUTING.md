@@ -12,17 +12,12 @@ Kur shton një modul me logjikë, shtoji kontrollet te `if __name__ == "__main__
 
 ## Demo pa Ollama
 
-```
-python demo.py
-```
-
-PowerShell:
-
-```
-$env:OSINT_DB="demo.db"; streamlit run dashboard.py
+```powershell
+python demo.py                    # ose: python demo.py demo2.db
+$env:OSINT_DB="demo.db"; python -m streamlit run dashboard.py
 ```
 
-`demo.db` mbushet me 36 artikujt **sintetikë** të `eval/gold.jsonl`. Në vend të përgjigjes së modelit përdoren etiketat e sakta, ndaj demo tregon pamjen e analistit, jo saktësinë. `demo.py` refuzon të shkruajë në `osint.db`.
+`demo.db` mbushet me 63 artikujt **sintetikë** të `eval/gold.jsonl`. Në vend të përgjigjes së modelit përdoren etiketat e sakta, ndaj demo tregon pamjen e analistit, jo saktësinë. `demo.py` s'shkruan te `OSINT_DB`, s'mbishkruan asnjë skedar ekzistues dhe refuzon emrin `osint.db`. `python demo.py --kontrollo` provon këto mbrojtje (e nis edhe `kontrollo.py`).
 
 ## Variablat e mjedisit
 
