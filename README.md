@@ -59,7 +59,7 @@ $env:OSINT_DB="demo.db"; python -m streamlit run dashboard.py
 ### Kontrollet në Windows
 
 ```powershell
-python kontrollo.py                   # 17 kontrolle, pa Ollama dhe pa rrjet
+python kontrollo.py                   # 18 kontrolle, pa Ollama dhe pa rrjet
 python collector.py --kontrollo
 ```
 
@@ -68,6 +68,14 @@ Kalojnë edhe kur terminali përdor kodimin e vjetër `cp1252` (pa `PYTHONUTF8`)
 Tema e errët e dashboard-it vjen nga `.streamlit/config.toml` (lexohet kur `streamlit run` niset nga dosja e projektit). Artikujt që s'arrihen në një ekzekutim përpunohen herën tjetër, sepse rezultatet ruhen në `osint.db`. Çdo hap mund të niset edhe veçmas, p.sh. `python collector.py` ose `python extractor.py 10`.
 
 **Nga dashboard-i (skeda "Ekzekutimi"):** butoni **▶️ Ekzekuto tani** nis `ekzekuto.py` në sfond (log-u te `pipeline.log`, dy ekzekutime njëkohësisht nuk lejohen). Te **Automatikisht** zgjidhet çdo 1/2/3/6/12/24 orë: krijohet detyra "OSINT Kosova" në Windows Task Scheduler, që punon edhe kur dashboard-i është i mbyllur (kompjuteri ndezur dhe Ollama duke punuar).
+
+### Demo në Streamlit Community Cloud
+
+Në cloud (Linux, ose lokalisht me `OSINT_CLOUD=1`) dashboard-i krijon vetë `demo.db` nga 63 artikujt **sintetikë** të `eval/gold.jsonl`, shfaq njoftimin "Demo me të dhëna sintetike" dhe çaktivizon "Ekzekuto tani" dhe orarin, sepse aty s'ka Ollama. Vendimet e analistit ruhen vetëm deri në rinisjen e aplikacionit.
+
+1. Te share.streamlit.io: **Create app**, repo `enesmaloku-a11y/osinttttt`, dega `main`, skedari `dashboard.py`. Te **Advanced settings** zgjidh Python 3.12.
+2. Mos vendos `OSINT_DB`, `APIFY_TOKEN` apo `osint.db` në cloud: aty shkon vetëm demo-ja.
+3. Te **Settings → Sharing**, lejo vetëm email-et e ekipit dhe të jurisë.
 
 ## Mjetet për analistin
 

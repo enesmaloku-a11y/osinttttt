@@ -5,13 +5,18 @@ Nis me:  python ekzekuto.py 20      (deri në 20 artikuj për përkthim/nxjerrje
 """
 import contextlib
 import json
-import msvcrt
 import os
 import subprocess
 import sys
 import traceback
 import warnings
 from datetime import datetime
+
+WINDOWS = os.name == "nt"
+if WINDOWS:
+    import msvcrt
+else:  # Linux (p.sh. Streamlit Cloud): bllokimi me fcntl, pa Task Scheduler
+    import fcntl
 
 DOSJA = os.path.dirname(os.path.abspath(__file__))
 LOG = os.path.join(DOSJA, "pipeline.log")
@@ -24,9 +29,13 @@ PA_DRITARE = 0x08000000          # CREATE_NO_WINDOW: pa dritare konsole
 
 # ---------------- Bllokimi: vetëm një ekzekutim në të njëjtën kohë ----------------
 def _blloko(f):
-    """Bllokon bajtin e parë të LOCK. Windows e liron vetë kur procesi mbyllet/rrëzohet."""
+    """Bllokon bajtin e parë të LOCK. Sistemi e liron vetë kur procesi mbyllet/rrëzohet.
+    Kur bllokimi është i zënë ngre OSError (në Linux BlockingIOError, nënklasë e saj)."""
     f.seek(0)
-    msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+    if WINDOWS:
+        msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+    else:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
 
 
 def po_punon():
@@ -37,7 +46,10 @@ def po_punon():
         except OSError:
             return True
         f.seek(0)
-        msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+        if WINDOWS:
+            msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
         return False
 
 
@@ -73,7 +85,7 @@ def ekzekuto(n):
 def nis_ne_sfond(n):
     """Nis ekzekuto.py si proces më vete, që të vazhdojë edhe kur dashboard-i rifreskohet."""
     subprocess.Popen([sys.executable, os.path.join(DOSJA, "ekzekuto.py"), str(n)],
-                     cwd=DOSJA, creationflags=PA_DRITARE, close_fds=True)
+                     cwd=DOSJA, creationflags=PA_DRITARE if WINDOWS else 0, close_fds=True)
 
 
 def log_fundit(rreshta=25):
@@ -85,6 +97,8 @@ def log_fundit(rreshta=25):
 
 # ---------------- Orari automatik (Windows Task Scheduler) ----------------
 def _schtasks(*args):
+    if not WINDOWS:
+        return False, "Orari automatik punon vetëm në Windows (Task Scheduler)."
     r = subprocess.run(["schtasks", *args], capture_output=True, text=True, creationflags=PA_DRITARE)
     return r.returncode == 0, (r.stdout + r.stderr).strip()
 
