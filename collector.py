@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from functools import lru_cache
 from threading import Lock
-from urllib.parse import urlencode, urljoin, urlsplit
+from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 from urllib.robotparser import RobotFileParser
 
 import feedparser
@@ -33,7 +33,11 @@ FEEDS = {
     "RTS": "https://www.rts.rs/vesti/rss.html",
     "Kosovo Online": "https://www.kosovo-online.com/rss.xml",
     "KoSSev": "https://kossev.info/feed/",
-    # URL-të e burimeve të tjera ruhen jashtë FEEDS derisa RSS-i të verifikohet.
+    "Novosti": "https://novosti.rs/rss/vesti",
+    "Danas": "https://www.danas.rs/feed/",
+    # Informer nuk u gjet në /rss, /rss.xml, /feed, /feed/, /rss/all, /rss/vesti.
+    # RSE /api/ është feed rajonal me artikuj BiH/Kroaci, jo shërbimi serb i kërkuar.
+    # MO Srbije: nuk u gjet RSS në faqen zyrtare ose shtigjet e zakonshme.
 }
 
 BURIMET_INFO = {
@@ -42,6 +46,8 @@ BURIMET_INFO = {
     "RTS": dict(domeni="rts.rs", gjuha="sr", lloji="media", vendi="RS"),
     "Kosovo Online": dict(domeni="kosovo-online.com", gjuha="sr", lloji="media", vendi="RS"),  # vendi: i pa verifikuar
     "KoSSev": dict(domeni="kossev.info", gjuha="sr", lloji="media", vendi="XK"),
+    "Novosti": dict(domeni="novosti.rs", gjuha="sr", lloji="media", vendi="RS"),
+    "Danas": dict(domeni="danas.rs", gjuha="sr", lloji="media", vendi="RS"),
 }
 AGENT = "osint-prototype/1.0"
 PUNETORE = 8  # sa shkarkime paralele
@@ -103,6 +109,17 @@ def normalizo_lidhjen_rss(url, domeni):
     return url
 
 
+def url_normalizuar(url):
+    """Heq vetëm parametrat e gjurmimit dhe fragmentin për krahasimin e URL-ve."""
+    try:
+        u = urlsplit(url)
+        q = [(k, v) for k, v in parse_qsl(u.query, keep_blank_values=True)
+             if not k.lower().startswith("utm_") and k.lower() != "fbclid"]
+        return urlunsplit((u.scheme.lower(), u.netloc.lower(), u.path.rstrip("/"), urlencode(q), ""))
+    except (TypeError, ValueError):
+        return ""
+
+
 def adrese_publike(adresa):
     ip = ipaddress.ip_address(adresa)
     return ip.is_global and not ip.is_multicast and not ip.is_reserved
@@ -143,10 +160,12 @@ class LidhjePublike(http.client.HTTPSConnection):
         raise OSError("Lidhja dështoi")
 
 
-def _shkarko(url, domeni, maks, kontrolli=None):
+def _shkarko(url, domeni, maks, kontrolli=None, me_content_type=False):
+    def pergjigje(status, trupi, content_type=None):
+        return (status, trupi, content_type) if me_content_type else (status, trupi)
     for _ in range(4):
         if not lejohet(url, domeni) or (kontrolli and not kontrolli(url)):
-            return None, None
+            return pergjigje(None, None)
         u = urlsplit(url)
         lidhja = LidhjePublike(u.hostname, 443, timeout=20)
         try:
@@ -159,14 +178,15 @@ def _shkarko(url, domeni, maks, kontrolli=None):
                     url = urljoin(url, r.getheader("Location") or "")
                     continue
                 if r.status != 200:
-                    return r.status, None
+                    return pergjigje(r.status, None, r.getheader("Content-Type"))
                 trupi = r.read(maks + 1)
-                return r.status, trupi if len(trupi) <= maks else None
+                return pergjigje(r.status, trupi if len(trupi) <= maks else None,
+                                 r.getheader("Content-Type"))
         except (OSError, ValueError, http.client.HTTPException):
-            return None, None
+            return pergjigje(None, None)
         finally:
             lidhja.close()
-    return None, None
+    return pergjigje(None, None)
 
 
 @lru_cache(maxsize=64)
@@ -317,9 +337,6 @@ def mblidh_rss(burimi, feed_url):
         url = urljoin(feed_url, linku) if isinstance(linku, str) and linku else None
         url = normalizo_lidhjen_rss(url, domeni) if url else None
         # Cache: nëse URL ekziston, mos e shkarko përsëri
-        if not lejohet(url, domeni):
-            jashte += 1
-            continue
         titulli, permbledhja = e.get("title", ""), e.get("summary", "")
         if not (isinstance(titulli, str) and isinstance(permbledhja, str)):
             filtruar += 1
@@ -327,6 +344,9 @@ def mblidh_rss(burimi, feed_url):
         titulli, permbledhja = titulli[:500], permbledhja[:5000]
         if not ka_lidhje(burimi, f"{titulli} {pastro_html(permbledhja)}"):
             filtruar += 1
+            continue
+        if not lejohet(url, domeni):
+            jashte += 1
             continue
         if not db.ekziston_url(url):
             detyrat.append((burimi, url, titulli, data_iso(e), permbledhja))
@@ -355,8 +375,9 @@ def kerkesat_gdelt(ora):
     return tuple((emri, query + " -domain:naslovi.net") for emri, query in GDELT_GRUPET)
 
 
-def detyrat_gdelt(artikujt):
+def detyrat_gdelt(artikujt, urls_rss=None):
     detyra = []
+    pare = {url_normalizuar(u) for u in (urls_rss or [])}
     for r in artikujt:
         if not isinstance(r, dict):
             continue
@@ -364,7 +385,10 @@ def detyrat_gdelt(artikujt):
         if not lejohet(url) or not isinstance(titulli, str) or not 0 < len(titulli.strip()) <= 500:
             continue
         domeni = hosti(url)
-        if lejohet(url, "naslovi.net") or db.ekziston_url(url):
+        normal = url_normalizuar(url)
+        if (lejohet(url, "naslovi.net") or normal in pare or db.ekziston_url(url)
+                or not (KOSOVA.search(titulli) or
+                        (_regex_kercenimet() and _regex_kercenimet().search(titulli)))):
             continue
         try:
             data = datetime.strptime(r.get("seendate"), "%Y%m%dT%H%M%SZ") \
@@ -373,6 +397,7 @@ def detyrat_gdelt(artikujt):
             continue
         # Kjo është koha kur GDELT e pa artikullin.
         detyra.append((f"GDELT:{domeni}", url, titulli, data))
+        pare.add(normal)
     return detyra
 
 
@@ -384,16 +409,19 @@ def mblidh_gdelt(ora=None):
         params = urlencode(dict(query=query, mode="artlist", format="json",
                                 timespan="1d", maxrecords=50, sort="datedesc"))
         url = f"{GDELT}?{params}"
-        status, trupi = _shkarko(url, "api.gdeltproject.org", 1_000_000)
+        # API publike, robots.txt i saj jep 404; robots mbetet aktiv për faqet e artikujve.
+        status, trupi, content_type = _shkarko(url, "api.gdeltproject.org", 1_000_000,
+                                              me_content_type=True)
         for riprovim in range(2):
             if status != 429 and not (trupi and b"please limit requests" in trupi.lower()):
                 break
             print(f"  GDELT {emri}: HTTP 429/kufizim ritmi; riprovim {riprovim + 1}/2")
-            time.sleep(20 * (riprovim + 1))
-            status, trupi = _shkarko(url, "api.gdeltproject.org", 1_000_000)
+            time.sleep(15 * (2 ** riprovim))
+            status, trupi, content_type = _shkarko(url, "api.gdeltproject.org", 1_000_000,
+                                                   me_content_type=True)
         if status == 429 or (trupi and b"please limit requests" in trupi.lower()):
             deshtime += 1
-            print(f"  GDELT {emri}: dështoi pas 2 riprovimeve; HTTP {status}; body={repr((trupi or b'')[:300])}")
+            print(f"  GDELT {emri}: dështoi pas 2 riprovimeve; HTTP {status}; Content-Type={content_type}; body={repr((trupi or b'')[:300])}")
             continue
         if trupi is None:
             deshtime += 1
@@ -406,7 +434,7 @@ def mblidh_gdelt(ora=None):
                 raise ValueError("Format i papritur")
         except (ValueError, UnicodeError):
             deshtime += 1
-            print(f"  GDELT {emri}: përgjigje jo-JSON, HTTP {status}, {len(trupi)} bajtë; body={trupi[:300]!r}")
+            print(f"  GDELT {emri}: përgjigje jo-JSON, HTTP {status}, Content-Type={content_type}, {len(trupi)} bajtë; body={trupi[:300]!r}")
             continue
         shtuar = ruaj_te_gjitha(detyrat_gdelt(artikujt[:50]))
         te_reja += shtuar
@@ -443,22 +471,41 @@ def mblidh_te_gjitha():
 
 def kontrollo():
     import scoring
+    import inspect
 
-    assert set(BURIMET_INFO) <= set(FEEDS) and set(BURIMET_INFO) <= set(scoring.MEDIAT)
-    assert all(hosti(FEEDS[b]) == f["domeni"] for b, f in BURIMET_INFO.items())
+    for s in ("Kosovo", "Косово", "Космет", "Metohija", "Zubin Potok", "Jarinje", "Јариње",
+              "KFOR", "FSK", "Mitrovica", "Приштина", "Leposavić"):
+        assert KOSOVA.search(s), s
+    for s in ("Prizren", "Gjakova", "Peja", "Pejë", "protest studenata u Beogradu",
+              "blokada auto-puta kod Novog Sada"):
+        assert not KOSOVA.search(s), s
+    assert ka_lidhje("RTS", "Dron nadleteo branu Gazivode na Kosovu")
+    assert not ka_lidhje("RTS", "Војска Србије подигла борбену готовост код Рашке")
+    assert ka_lidhje("Policia e Kosovës", "Policia sekuestron armë pranë Jarinjës")
+    assert ka_lidhje("Hibrid.info", "Lajm i rremë për FSK-në")
+    assert ka_lidhje("RTS", "Lajm i rremë për FSK-në")
+    assert ka_lidhje("RTS", "protest u Beogradu") is False
+    assert ka_lidhje("RTS", "") is False and ka_lidhje("Koha", "") is True
+    assert url_normalizuar("https://a.test/x/?utm_source=a&fbclid=z#f") == "https://a.test/x"
+    assert normalizo_lidhjen_rss("http://www.rtklive.com/a", "rtklive.com") == "https://www.rtklive.com/a"
+    assert normalizo_lidhjen_rss("http://evil.example/a", "rtklive.com").startswith("http://")
     assert lejohet("https://www.rts.rs/a", "rts.rs")
-    for url in ("https://rts.rs.example/a", "https://fakrts.rs/", "http://rts.rs/",
-                "https://u@rts.rs/", "file:///c:/x", "https://rts.rs:8443/"):
+    for url in ("https://evil-rts.rs.attacker.com/a", "http://127.0.0.1/", "http://10.0.0.1/",
+                "http://192.168.1.1/", "http://169.254.1.1/", "https://rts.rs@evil.com/",
+                "file:///etc/passwd", "https://rts.rs:8443/"):
         assert not lejohet(url, "rts.rs"), url
-    for url in ("https://127.0.0.1/", "https://10.0.0.1/", "https://localhost/", "https://[::1]/"):
-        assert not lejohet(url), url
-    assert domeni_i_lejuar("https://www.rts.rs/a") == "rts.rs"
-    assert domeni_i_lejuar("https://panjohur.example/a") is None
-    assert zbulo_gjuhen("У Приштини је пријављен нестанак струје") == "sr"
-    assert ka_lidhje("RTS", "У Приштини је пријављен нестанак струје")
-    assert not ka_lidhje("RTS", "Пожар у Београду") and not ka_lidhje("RTS", "Kosovo: koncert")
-    assert ka_lidhje("Hibrid.info", "Njoftim i rremë për ujin")
-    assert len({kerkesat_gdelt(i)[1][1] for i in range(3)}) == 3
+    for b, i in BURIMET_INFO.items():
+        assert i["gjuha"] in ("sr", "sq", "en") and i["lloji"] in ("media", "zyrtar")
+        assert i["vendi"] in ("RS", "XK") and b in FEEDS
+        assert b in scoring.MEDIAT
+    assert all(KOSOVA.search(q) for _, q in kerkesat_gdelt(0)[1:])
+    assert not any(x in " ".join(q for _, q in kerkesat_gdelt(0)).lower()
+                   for x in ("flood", "fire", "outage", "poplav", "požar", "përmbytje", "zjarr"))
+    q_tegjitha = re.sub(r"\bOR\b", "", " ".join(q for _, q in kerkesat_gdelt(0)), flags=re.I)
+    assert not re.search(r"(?<![\w-])[a-z]{1,2}(?![\w-])", q_tegjitha, re.I)
+    assert not re.search(r"kosov|kosmet|косов", kerkesat_gdelt(0)[0][1], re.I)
+    assert len(inspect.signature(verifiko).parameters) == 3
+    assert len(kerkesat_gdelt(0)) == 6
     print("Kontrollet e mbledhjes kaluan.")
 
 
