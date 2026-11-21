@@ -113,8 +113,9 @@ with tab_ngj:
     ngjarjet["det"] = ngjarjet["detajet_json"].apply(lambda d: json.loads(d or "{}"))
     for _, e in ngjarjet.dropna(subset=["lat", "lon"]).iterrows():
         sv = e["det"].get("saktesia_vendit")
-        # Titulli vjen nga lajmi/modeli: escape, që HTML i tij të mos ekzekutohet në hartë
-        titulli = html.escape(e["titulli"])
+        # Titulli vjen nga lajmi/modeli. Folium e fut në një template literal JS (`...`),
+        # ndaj përveç HTML-së neutralizohen edhe ` dhe $ (${...})
+        titulli = html.escape(e["titulli"]).replace("`", "&#96;").replace("$", "&#36;")
         popup = (f"{titulli}<br>Besueshmëria: {e['besueshmeria']}<br>"
                  f"Vendi: {SAKTESIA[sv]} · Vendimi: {e['statusi']}")
         if sv == "region":
