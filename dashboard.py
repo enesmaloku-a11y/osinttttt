@@ -6,6 +6,7 @@ të rreziku.py), Ngjarjet (harta, kronologjia), Kërcënimet (taksonomia), Burim
 Artikujt, Ekzekutimi.
 """
 import json
+import os
 import sqlite3
 from collections import Counter
 from datetime import datetime, timedelta
@@ -33,6 +34,29 @@ REZULTATI = DOSJA / "eval" / "rezultati.json"          # nga eval/evaluate.py
 RAPORTI_MODELIT = DOSJA / "data" / "raporti_modelit.json"  # nga trajno.py
 
 st.set_page_config(page_title="OSINT Kosova", layout="wide")
+
+# Cloud (Streamlit Cloud është Linux, pa Ollama): vetëm demo me të dhëna sintetike, pa nisje të
+# pipeline-it. OSINT_CLOUD=1 e provon këtë mënyrë edhe në Windows.
+CLOUD = os.name != "nt" or os.environ.get("OSINT_CLOUD") == "1"
+
+
+@st.cache_resource
+def pergatit_demon():
+    """Një herë për proces: pa OSINT_DB, cloud-i përdor demo.db dhe e krijon nga gold-i kur mungon."""
+    import demo
+    db.DB_PATH = os.environ.get("OSINT_DB") or str(DOSJA / "demo.db")
+    if not Path(db.DB_PATH).exists():
+        try:
+            demo.gjenero(db.DB_PATH)
+        except FileExistsError:
+            pass  # një proces tjetër e krijoi ndërkohë
+    return db.DB_PATH
+
+
+if CLOUD:
+    db.DB_PATH = pergatit_demon()
+    st.info("Demo me të dhëna **sintetike** (63 artikuj nga `eval/gold.jsonl`). Sistemi për FSK-në "
+            "punon lokalisht me Ollama; këtu pipeline-i s'niset.")
 
 
 @st.cache_data(ttl=60)
@@ -113,8 +137,10 @@ artikujt["grupi"] = artikujt["burimi"].where(~artikujt["burimi"].str.startswith(
 # Butoni kryesor në krye të sidebar-it, që të duket gjithmonë (edhe në ekran të vogël)
 st.sidebar.header("Pipeline-i")
 # Gjatë etiketimit (pipeline.ngrire ose OSINT_NGRIRE=1) asgjë s'nis pipeline-in nga dashboard-i
-ngrire = raporti.ngrire()
-if ngrire:
+ngrire = raporti.ngrire() or CLOUD
+if CLOUD:
+    st.sidebar.info("Demo në cloud: ekzekutimi dhe orari punojnë vetëm në laptopin me Ollama.")
+elif ngrire:
     st.sidebar.warning("Etiketim në vazhdim: pipeline-i është i ngrirë. Ekzekutimi dhe orari janë çaktivizuar.")
 if st.sidebar.button("▶️ Ekzekuto tani", type="primary", key="ekz_sidebar", use_container_width=True,
                      disabled=ngrire):
