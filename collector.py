@@ -39,13 +39,12 @@ FEEDS = {
     "RTS": "https://www.rts.rs/vesti/rss.html",
     "Kosovo Online": "https://www.kosovo-online.com/rss.xml",
     "KoSSev": "https://kossev.info/feed/",
-    "Novosti": "https://novosti.rs/rss/vesti",
+    "Novosti": "https://www.novosti.rs/rss/vesti/politika",
     "Danas": "https://www.danas.rs/feed/",
     # Shërbimi "Kosovo" nga slobodnaevropa.org/rssfeeds. Më 2026-11-21: 15 nga 20 hyrje kalonin
     # filtrin, kundrejt 3 nga 20 te "Srbija" (api/zototl-vomx-tpepomq).
     "RSE": "https://www.slobodnaevropa.org/api/zmtoil-vomx-tpeyomp",
-    # Feed-i kryesor i lidhur nga faqja zyrtare informer.rs/rss.
-    "Informer": "https://informer.rs/rss/najnovije-vesti",
+    "Informer": "https://informer.rs/rss/politika/vesti",
     # RSS 2.0 i vërtetuar më 2026-11-21: 20 hyrje, të gjitha në mod.gov.rs, robots.txt e lejon.
     "MO Srbije": "https://www.mod.gov.rs/rss.php?lat",
 }
@@ -69,6 +68,14 @@ MAKS_PER_FEED = 15
 GDELT_PAUZA = 10
 GDELT = "https://api.gdeltproject.org/api/v2/doc/doc"
 KOSOVA = re.compile(r"\b(kosov|kosmet|metohij|kosovsk|косов|космет|метохиј|prištin|prishtin|pristina|приштин|mitrovic|митровиц|zve[čcç]an|звечан|leposavi|лепосави|zubin\w* potok|зубин\w* поток|gazivod|газивод|ujman|jarinj|јарињ|brnjak|брњак|merdar|мердар|kfor|кфор|fsk|ksf)", re.I)
+# shortcut: rrënjë shtesë me mbaresa për lakimet serbe/shqipe; propozim që kërkon miratimin e A-së (devijim nga Prompt B, Hapi 2).
+KOSOVA_EKSTRA = re.compile(
+    r"\b(?:"
+    r"zubin\w*\s+potok\w*|зубин\w*\s+поток\w*|"  # Komuna në Kosovë, edhe kur RSS-ja përdor hapësira të shumëfishta.
+    # Vija administrative vetëm me formulimin e plotë të rastit në shqip. Të miratohet nga A.
+    r"grumbullim\w*\s+i\s+forc\w*\s+serb\w*\s+pran[eë]\s+vij\w*\s+administrativ\w*"
+    r")\b", re.I,
+)
 # Formulimi shqip për forca ushtarake serbe që taksonomia s'e kap ("forcat serbe", "ushtarët serbë").
 # shortcut: jeton këtu që të mos preket kercenimet.py para ngrirjes; zhvendose te taksonomia pas saj.
 USHTARAK_SQ = re.compile(r"\b(?:forc|ushtar|xhandarm)\w*(?: (?:ushtarake|speciale|[eë] armatosura))?"
@@ -105,11 +112,11 @@ def ka_lidhje(burimi, titulli, permbledhja=""):
     if not tekst:
         return False
     if info["vendi"] == "RS" and info["lloji"] == "media":
-        return bool(KOSOVA.search(tekst))
+        return bool(KOSOVA.search(tekst) or KOSOVA_EKSTRA.search(tekst))
     kercenime = _regex_kercenimet()
     if info["lloji"] == "zyrtar" and info["vendi"] == "RS":
         militar = _regex_ushtarak_dron()
-        return bool(KOSOVA.search(tekst) or (militar and militar.search(tekst)))
+        return bool(KOSOVA.search(tekst) or KOSOVA_EKSTRA.search(tekst) or (militar and militar.search(tekst)))
     return bool(KOSOVA.search(tekst) or USHTARAK_SQ.search(tekst) or (kercenime and kercenime.search(tekst)))
 
 
@@ -659,14 +666,72 @@ def kontrollo():
     assert normalizo_lidhjen_rss("http://www.rtklive.com/a", "rtklive.com") == "https://www.rtklive.com/a"
     assert normalizo_lidhjen_rss("http://evil.example/a", "rtklive.com").startswith("http://")
     assert lejohet("https://www.rts.rs/a", "rts.rs")
-    for url in ("https://evil-rts.rs.attacker.com/a", "http://127.0.0.1/", "http://10.0.0.1/",
+    for url in ("https://rts.rs.keq.com/a", "https://keqrts.rs/", "http://rts.rs/",
+                "https://127.0.0.1/", "https://10.0.0.1/", "https://localhost/",
+                "https://u@rts.rs/", "file:///c:/x",
+                "https://evil-rts.rs.attacker.com/a", "http://127.0.0.1/", "http://10.0.0.1/",
                 "http://192.168.1.1/", "http://169.254.1.1/", "https://rts.rs@evil.com/",
                 "file:///etc/passwd", "https://rts.rs:8443/"):
         assert not lejohet(url, "rts.rs"), url
+    assert set(BURIMET_INFO) <= set(FEEDS)
     for b, i in BURIMET_INFO.items():
-        assert i["gjuha"] in ("sr", "sq", "en") and i["lloji"] in ("media", "zyrtar")
-        assert i["vendi"] in ("RS", "XK") and b in FEEDS
+        assert i["domeni"] == hosti(FEEDS[b])
+        assert i["gjuha"] in ("sr", "sq", "en") and i["lloji"] in ("media", "zyrtar", "telegram", "youtube")
+        assert i["vendi"] in ("RS", "XK")
         assert b in scoring.MEDIAT
+    korpusi = {
+        "sq": (
+            ("Grumbullim i forcave serbe pranë vijës administrative",
+             "Hetim për një dron mbi Gazivodë", "Barrikada në Zubin Potok",
+             "Policia raporton incident pranë Jarinjës", "Sulm kibernetik ndaj institucioneve të Kosovës",
+             "Pretendim i rremë për KFOR-in", "Ndërprerje e furnizimit në Mitrovicë",
+             "Raport për një incident pranë Bërnjakut në Kosovë"),
+            ("Rriten çmimet e karburanteve në Shqipëri", "Koncert i ri në Beograd",
+             "Kuvendi i Shqipërisë miratoi projektbuxhetin", "Bllokohet qarkullimi pranë Durrësit",
+             "Punime përgjatë vijës administrative në Tiranë",
+             "Protestë për pagat në Shkup", "Kampionat basketbolli në Elbasan",
+             "Autoritetet lokale diskutojnë vijën administrative të dy komunave"),
+        ),
+        "sr": (
+            ("Dron nadleteo Gazivode", "Barikade na putu ka Zubinom Potoku",
+             "Radovi kod Zubinog Potoka", "Incident na Jarinju", "Sajber napad na institucije Kosova",
+             "Dezinformacije o KFOR-u", "Nestanak struje u Mitrovici", "Saopštenje policije u Leposaviću"),
+            ("Studenti blokirali raskrsnicu u Beogradu, protest se nastavlja",
+             "Protest u Novom Sadu", "Cene goriva više za tri dinara", "Koncert u Beogradu",
+             "Ibarska magistrala zatvorena zbog radova", "Nova pruga Beograd–Niš",
+             "Obnova puta uz administrativnu liniju između opština u Vojvodini",
+             "Sezonski radovi na putu Zubinovac–Niš"),
+        ),
+        "sr_cyr": (
+            ("Дрон надлетео Газиводе", "Барикаде код Зубиног Потока",
+             "Радови на путу ка Зубином Потоку", "Инцидент на Јарињу", "Сајбер напад на институције Косова",
+             "Дезинформације о КФОР-у", "Нестанак струје у Митровици", "Саопштење полиције у Лепосавићу"),
+            ("Студенти блокирали раскрсницу у Београду, протест се наставља",
+             "Протест у Новом Саду", "Цене горива више за три динара", "Концерт у Београду",
+             "Ибарска магистрала затворена због радова", "Нова пруга Београд–Ниш",
+             "Обнова пута уз административну линију између општина у Војводини",
+             "Радови на путу Зубиновац–Ниш"),
+        ),
+    }
+    media_rs = [b for b, i in BURIMET_INFO.items() if (i["vendi"], i["lloji"]) == ("RS", "media")]
+    burime_xk = [b for b, i in BURIMET_INFO.items() if i["vendi"] == "XK"]
+    burime_te_vjetra = set(FEEDS) - set(BURIMET_INFO)
+    for gjuha, (pozitive, negative) in korpusi.items():
+        assert len(pozitive) >= 8 and len(negative) >= 8
+        titujt = (*pozitive, *negative)
+        for burimi in media_rs:
+            assert all(ka_lidhje(burimi, t) for t in pozitive), (gjuha, burimi)
+            assert not any(ka_lidhje(burimi, t) for t in negative), (gjuha, burimi)
+        for burimi in burime_te_vjetra:
+            assert all(ka_lidhje(burimi, t) for t in titujt), (gjuha, burimi)
+        me_ekstra = {b: [ka_lidhje(b, t) for t in titujt] for b in burime_xk}
+        with patch(__name__ + ".KOSOVA_EKSTRA", re.compile(r"(?!)")):
+            assert me_ekstra == {b: [ka_lidhje(b, t) for t in titujt] for b in burime_xk}
+            para = (sum(ka_lidhje("RTS", t) for t in pozitive), sum(ka_lidhje("RTS", t) for t in negative))
+        print(f"Filtri RS {gjuha}: TP {para[0]} → {len(pozitive)}; FP {para[1]} → 0")
+    assert ka_lidhje("RTS", "Incident u Zubinom  Potoku")
+    assert ka_lidhje("RTS", "Инцидент код Зубиног  Потока")
+    assert ka_lidhje("MO Srbije", "Dron nadleteo Gazivode")
     assert GDELT_PAUZA == 10
     nxirr_vjeter, pergatit_vjeter, ruaj_vjeter = nxirr_tekstin, pergatit, db.ruaj_artikull
     try:
