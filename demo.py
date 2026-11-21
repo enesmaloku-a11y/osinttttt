@@ -17,21 +17,36 @@ from pathlib import Path
 import db
 
 GOLD = Path(__file__).resolve().parent / "eval" / "gold.jsonl"
+# Aktori kur gold-i s'e jep: vetëm për kategoritë ku s'ka dyshim se kush qëndron pas
+AKTORI_NGA_KATEGORIA = {"ushtarak_serbia": "shteti_serb", "struktura_paralele": "shteti_serb",
+                        "diplomatik_ligjor": "shteti_serb"}
 
 
 def rezultati(g, perm, vendi):
     """JSON në formën e extractor.py, i ndërtuar nga etiketat e gold set-it."""
     p = g["pritet"]
     kat = p.get("kategoria") or "tjeter"
+    kat = kat[0] if isinstance(kat, list) else kat
     return {"is_security_event": p["is_security_event"], "in_kosovo": p["in_kosovo"],
             "type": (p["type"] or ["other"])[0], "summary": perm, "event_date": g["data"], "place": vendi,
             "place_precision": ("region" if vendi == "veri" else "municipality") if vendi else None,
             "date_precision": "exact", "actors": [], "killed": None, "injured": None,
             "arrested": None, "demo": True,
             # K2: gold-i jep disa kategori të pranueshme si listë; merret e para
-            "kategoria": kat[0] if isinstance(kat, list) else kat,
-            "aktori": p.get("aktori") or "i_panjohur", "shenjestrat": p.get("shenjestrat") or [],
+            "kategoria": kat,
+            "aktori": p.get("aktori") or AKTORI_NGA_KATEGORIA.get(kat, "i_panjohur"), "shenjestrat": p.get("shenjestrat") or [],
             "lidhje_me_fsk": p.get("lidhje_me_fsk") is True}  # shortcut: place = emri kanonik ("mitrovic"), jo teksti i artikullit
+
+
+def shenjo_aktoret_e_nxjerre(gold):
+    """Aktori i nxjerrë nga kategoria s'është as etiketë as përgjigje e modelit: shënohet te ngjarja
+    (correlator.py s'e bart këtë fushë nga artikujt, ndaj shkruhet pas korrelimit)."""
+    me_aktor = {f"gold://{g['id']}" for g in gold if g["pritet"].get("aktori")}
+    for e in db.ngjarjet():
+        det = json.loads(e["detajet_json"] or "{}")
+        if det.get("aktori", "i_panjohur") != "i_panjohur" and not me_aktor & set(json.loads(e["burimet"])):
+            det["aktori_burimi"] = "nga_kategoria"
+            db.ruaj_besueshmerine(e["id"], e["besueshmeria"], det)
 
 
 def mbush(gold):
@@ -57,6 +72,7 @@ def mbush(gold):
         db.sheno_perpunuar(aid, rezultati(g, perm[k], vendi[k]))
     n = correlator.korrelo()
     scoring.vlereso_te_gjitha()
+    shenjo_aktoret_e_nxjerre(gold)
     # "Sot" = dita e fundit e gold set-it, që pikët e freskisë (dhe Urgjente) të mos ndryshojnë me kalendarin
     rreziku.vlereso_te_gjitha(sot=max(g["data"] for g in gold))
     return n
