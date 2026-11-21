@@ -61,7 +61,7 @@ PUNETORE = 8  # sa shkarkime paralele
 MAKS_PER_FEED = 15
 GDELT_PAUZA = 30
 GDELT = "https://api.gdeltproject.org/api/v2/doc/doc"
-KOSOVA = re.compile(r"\b(kosov|kosmet|metohij|kosovsk|косов|космет|метохиј|priština|prishtin|pristina|приштин|mitrovic|митровиц|zvečan|звечан|leposavi|лепосави|zubin potok|зубин поток|jarinj|јарињ|brnjak|брњак|merdar|мердар|kfor|кфор|fsk|ksf)", re.I)
+KOSOVA = re.compile(r"\b(kosov|kosmet|metohij|kosovsk|косов|космет|метохиј|prištin|prishtin|pristina|приштин|mitrovic|митровиц|zvečan|звечан|leposavi|лепосави|zubin potok|зубин поток|jarinj|јарињ|brnjak|брњак|merdar|мердар|kfor|кфор|fsk|ksf)", re.I)
 
 
 @lru_cache(maxsize=1)
@@ -393,7 +393,7 @@ def mblidh_rss(burimi, feed_url):
 
 
 GDELT_GRUPET = (
-    ("ushtarak_serbia", '(Serbia OR Srbija OR "Vojska Srbije" OR "Војска Србије") (military OR army OR drone OR espionage OR Pancir OR FK-3 OR HQ-22 OR MiG-29 OR "China Serbia" OR "Russia Serbia")'),
+    ("ushtarak_serbia", '(Serbia OR Srbija OR "Vojska Srbije" OR "Војска Србије") (military OR army OR drone OR espionage OR Pancir OR "FK-3" OR "HQ-22" OR "MiG-29" OR "China Serbia" OR "Russia Serbia")'),
     ("grupe_te_armatosura-ekstremizem_terrorizem", '(Kosovo OR Kosmet OR Kosova OR Metohija) (armed OR weapons OR terrorism OR extremist OR militant OR вооружен OR тероризам)'),
     ("kibernetik-infrastrukture_kritike", '(Kosovo OR Kosmet OR Kosova OR Metohija) (cyber OR ransomware OR DDoS OR hackers OR Gazivode OR "Ibar-Lepenac" OR KEK OR KOSTT)'),
     ("dezinformim-spiunazh_ndikim", '(Kosovo OR Kosmet OR Kosova OR Metohija) (disinformation OR propaganda OR "fake news" OR "лажне вести" OR bots)'),
@@ -407,34 +407,53 @@ def kerkesat_gdelt(ora):
     return tuple((emri, query + " -domain:naslovi.net") for emri, query in GDELT_GRUPET)
 
 
-def detyrat_gdelt(artikujt, urls_rss=None):
+def detyrat_gdelt(artikujt, urls_rss=None, me_statistika=False):
     detyra = []
     pare = {url_normalizuar(u) for u in (urls_rss or [])}
+    statistika = {"rezultate": len(artikujt), "mbajtur": 0, "dublikat_rss": 0,
+                  "dublikat_db": 0, "jashte": 0, "filtruar": 0, "date_gabim": 0}
     for r in artikujt:
         if not isinstance(r, dict):
+            statistika["filtruar"] += 1
             continue
         url, titulli = r.get("url"), r.get("title")
         if not lejohet(url) or not isinstance(titulli, str) or not 0 < len(titulli.strip()) <= 500:
+            statistika["jashte"] += 1
             continue
         domeni = hosti(url)
         normal = url_normalizuar(url)
-        if (lejohet(url, "naslovi.net") or normal in pare or db.ekziston_url(url)
-                or not (KOSOVA.search(titulli) or
-                        (_regex_kercenimet() and _regex_kercenimet().search(titulli)))):
+        if lejohet(url, "naslovi.net"):
+            statistika["jashte"] += 1
+            continue
+        if normal in pare:
+            statistika["dublikat_rss"] += 1
+            continue
+        if db.ekziston_url(url):
+            statistika["dublikat_db"] += 1
+            continue
+        if not (KOSOVA.search(titulli) or
+                (_regex_kercenimet() and _regex_kercenimet().search(titulli))):
+            statistika["filtruar"] += 1
             continue
         try:
             data = datetime.strptime(r.get("seendate"), "%Y%m%dT%H%M%SZ") \
                 .replace(tzinfo=timezone.utc).isoformat()
         except (TypeError, ValueError):
+            statistika["date_gabim"] += 1
             continue
         # Kjo është koha kur GDELT e pa artikullin.
         detyra.append((f"GDELT:{domeni}", url, titulli, data))
         pare.add(normal)
-    return detyra
+        statistika["mbajtur"] += 1
+    return (detyra, statistika) if me_statistika else detyra
 
 
 def mblidh_gdelt(ora=None):
     te_reja = sukses = deshtime = 0
+    # RSS përpunohet para GDELT; mbaj URL-të e tij për numërimin e dublikatave.
+    with db.lidhu() as con:
+        urls_rss = [r[0] for r in con.execute(
+            "SELECT url FROM articles WHERE burimi NOT LIKE 'GDELT:%'")]
     for i, (emri, query) in enumerate(kerkesat_gdelt(datetime.now().hour if ora is None else ora)):
         if i:
             time.sleep(GDELT_PAUZA)
@@ -468,10 +487,15 @@ def mblidh_gdelt(ora=None):
             deshtime += 1
             print(f"  GDELT {emri}: përgjigje jo-JSON, HTTP {status}, Content-Type={content_type}, {len(trupi)} bajtë; body={trupi[:300]!r}")
             continue
-        shtuar = ruaj_te_gjitha(detyrat_gdelt(artikujt[:50]))
+        detyrat, stats = detyrat_gdelt(artikujt[:50], urls_rss, me_statistika=True)
+        shtuar = ruaj_te_gjitha(detyrat)
         te_reja += shtuar
         sukses += 1
-        print(f"  GDELT «{emri}»: {len(artikujt)} rezultate, {shtuar} të rinj")
+        urls_rss.extend(d[1] for d in detyrat)
+        print(f"  GDELT «{emri}»: HTTP {status}, JSON, {len(artikujt)} rezultate; "
+              f"{stats['mbajtur']} mbajtur pas filtrit; {stats['dublikat_rss']} dublikatë RSS, "
+              f"{stats['dublikat_db']} dublikatë DB, {stats['filtruar']} filtruar, "
+              f"{stats['jashte']} jashtë, {stats['date_gabim']} pa datë të vlefshme; {shtuar} të rinj")
     print(f"  GDELT përmbledhje: {sukses} grupe të suksesshme, {deshtime} të dështuara, {te_reja} artikuj të rinj")
     return te_reja
 
@@ -508,7 +532,7 @@ def kontrollo():
     import contextlib
     import io
 
-    for s in ("Kosovo", "Косово", "Космет", "Metohija", "Zubin Potok", "Jarinje", "Јариње",
+    for s in ("Kosovo", "Косово", "Космет", "Metohija", "Zubin Potok", "Jarinje", "Јариње", "Prištini",
               "KFOR", "FSK", "Mitrovica", "Приштина", "Leposavić"):
         assert KOSOVA.search(s), s
     for s in ("Prizren", "Gjakova", "Peja", "Pejë", "protest studenata u Beogradu",
@@ -520,6 +544,7 @@ def kontrollo():
     assert ka_lidhje("Hibrid.info", "Lajm i rremë për FSK-në")
     assert ka_lidhje("RTS", "Lajm i rremë për FSK-në")
     assert ka_lidhje("Kosovo Online", "Dron nadleteo branu Gazivode na Kosovu")
+    assert ka_lidhje("Kosovo Online", "Tužilaštvo: U Prištini zaplenjeno više od 15 kilograma narkotika")
     assert not ka_lidhje("RTS", "Војска Србије подигла борбену готовост код Рашке")
     mo_tituj = ("Исporučen kineski sistem FK-3 Vojsci Srbije",
                 "Isporučen kineski sistem FK-3 Vojsci Srbije",
@@ -569,9 +594,25 @@ def kontrollo():
                    for x in ("flood", "fire", "outage", "poplav", "požar", "përmbytje", "zjarr"))
     q_tegjitha = re.sub(r"\bOR\b", "", " ".join(q for _, q in kerkesat_gdelt(0)), flags=re.I)
     assert not re.search(r"(?<![\w-])[a-z]{1,2}(?![\w-])", q_tegjitha, re.I)
+    assert not re.search(r"(?<![\w\"])[a-z0-9]+-[a-z0-9-]+(?![\w\"])",
+                         " ".join(q for _, q in kerkesat_gdelt(0)), re.I)
     assert not re.search(r"kosov|kosmet|косов", kerkesat_gdelt(0)[0][1], re.I)
     assert len(inspect.signature(verifiko).parameters) == 3
     assert len(kerkesat_gdelt(0)) == 6
+    ekziston_vjeter = db.ekziston_url
+    try:
+        db.ekziston_url = lambda _url: False
+        detyra, stats = detyrat_gdelt([
+            {"url": "https://www.rtklive.com/unique?utm_source=x", "title": "Kosovo security", "seendate": "20261121T100000Z"},
+            {"url": "https://www.rtklive.com/lajm", "title": "Kosovo duplicate", "seendate": "20261121T100000Z"},
+            {"url": "https://www.rtklive.com/other", "title": "Sport result", "seendate": "20261121T100000Z"},
+            {"url": "https://www.rtklive.com/bad-date", "title": "Kosovo incident", "seendate": "bad"},
+            {"url": "http://evil.example/item", "title": "Kosovo incident", "seendate": "20261121T100000Z"},
+        ], ["https://www.rtklive.com/lajm"], me_statistika=True)
+        assert len(detyra) == 1 and stats == {"rezultate": 5, "mbajtur": 1, "dublikat_rss": 1,
+            "dublikat_db": 0, "jashte": 1, "filtruar": 1, "date_gabim": 1}
+    finally:
+        db.ekziston_url = ekziston_vjeter
     dl, sleep = _shkarko, time.sleep
     try:
         _shkarko = lambda *a, **kw: (429, None, "text/html")
