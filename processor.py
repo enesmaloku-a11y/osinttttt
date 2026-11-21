@@ -4,6 +4,7 @@ Anglishtja është gjuha e përbashkët që extractor.py punon me një prompt t�
 Gjuha origjinale mbetet te kolona 'gjuha'.
 """
 import json
+import os
 import re
 import sys
 import time
@@ -11,8 +12,8 @@ import urllib.request
 
 import db
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-MODELI = "deepseek-r1:8b"   # ndryshoje këtu nëse instalon model tjetër
+OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/generate")
+MODELI = os.environ.get("OLLAMA_MODEL", "deepseek-r1:8b")  # ose ndryshoje këtu
 MAX_KARAKTERE = 4000        # artikujt e gjatë priten; ngjarja zakonisht është në fillim
 COPA = 1500                 # sa karaktere përkthehen në një thirrje
 

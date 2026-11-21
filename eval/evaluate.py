@@ -4,14 +4,19 @@ Nis me:  python eval/evaluate.py
 
 - gold.jsonl ka artikuj SINTETIKË (të shkruar nga ekipi, jo lajme reale) në sq/sr/en,
   me përgjigjen e saktë te "pritet". Në prezantim thuaj qartë që janë sintetikë.
-- Kalon të njëjtin pipeline si sistemi: processor -> extractor -> correlator -> scoring.
+- Kalon të njëjtin pipeline si sistemi: processor -> extractor -> correlator -> scoring
+  -> rreziku (nëse rreziku.py ekziston). Konteksti (EUvsDisinfo/EuRepoC) s'thirret, sepse varet
+  nga skedarët lokalë te data/.
 - Përdor bazë të veçantë eval/eval.db (rikrijohet çdo herë); osint.db nuk preket.
 - Kërkon Ollama lokal, si processor.py.
+- Mat edhe kategorinë (K2), nivelin e rrezikut dhe URGJENTE (K9), me numra bruto dhe interval
+  Wilson 95%: me pak artikuj sintetikë, një përqindje e vetme do të mashtronte.
 """
+import importlib.util
 import json
 import sys
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 
@@ -21,6 +26,7 @@ sys.path.insert(0, str(DOSJA.parent))  # modulet e projektit janë një nivel m�
 import correlator  # noqa: E402
 import db  # noqa: E402
 import extractor  # noqa: E402
+import kercenimet  # noqa: E402
 import processor  # noqa: E402
 import scoring  # noqa: E402
 
@@ -37,9 +43,22 @@ def lexo_gold():
         gold = [json.loads(r) for r in f if r.strip()]
     ids = [g["id"] for g in gold]
     assert len(ids) == len(set(ids)), "id të përsëritura në gold.jsonl"
+    etiketat = {}
     for g in gold:
+        p = g["pritet"]
         assert g["gjuha"] in ("sq", "sr", "en"), g["id"]
-        assert {"is_security_event", "in_kosovo", "type", "grupi"} <= set(g["pritet"]), g["id"]
+        assert {"is_security_event", "in_kosovo", "type", "grupi"} <= set(p), g["id"]
+        # Fushat opsionale të K9: vetëm vlera nga kercenimet.py (me "ë", fjalë për fjalë)
+        k = p.get("kategoria")
+        assert k is None or all(isinstance(x, str) and kercenimet.kategoria_valide(x)
+                                for x in (k if isinstance(k, list) else [k])), g["id"]
+        assert p.get("rreziku_niveli") in (None, *kercenimet.NIVELET), g["id"]
+        assert p.get("prioriteti") in (None, *kercenimet.PRIORITETET), g["id"]
+        assert p.get("aktori") in (None, *kercenimet.AKTORET), g["id"]
+        # Rreziku dhe prioriteti janë të ngjarjes: të njëjtë për të gjithë artikujt e grupit
+        if p["grupi"]:
+            e = (p.get("rreziku_niveli"), p.get("prioriteti"))
+            assert etiketat.setdefault(p["grupi"], e) == e, g["id"]
     return gold
 
 
@@ -50,7 +69,8 @@ def url_e(g):
 def ekzekuto(gold):
     """Fut gold set-in në eval.db dhe kalon pipeline-in.
     Kthen ({id: JSON i extractor}, [[id, ...] për çdo ngjarje], sekonda, info).
-    info["rajonale"]: për çdo ngjarje, flamuri "rajonale" që vendosi correlator.py."""
+    info["rajonale"]: për çdo ngjarje, flamuri "rajonale" që vendosi correlator.py;
+    info["detajet"]: detajet_json (dict) e çdo ngjarjeje, në të njëjtën radhë."""
     if DB_EVAL.exists():
         DB_EVAL.unlink()
     db.DB_PATH = str(DB_EVAL)
@@ -64,15 +84,18 @@ def ekzekuto(gold):
     _, filtruar, gabime_nxjerrje, _ = extractor.perpuno(n)
     correlator.korrelo()
     scoring.vlereso_te_gjitha()
+    # Rreziku (A) vetëm nëse moduli ekziston; "sot" = data më e re e gold-it, për determinizëm
+    if importlib.util.find_spec("rreziku"):
+        importlib.import_module("rreziku").vlereso_te_gjitha(sot=max(g["data"][:10] for g in gold))
     sekonda = time.time() - t0
 
     id_e = {url_e(g): g["id"] for g in gold}
     rezultatet = {id_e[r["url"]]: json.loads(r["rezultati_json"]) for r in db.artikuj_te_nxjerre()}
     te_gjitha = db.ngjarjet()
     ngjarjet = [[id_e[u] for u in json.loads(e["burimet"])] for e in te_gjitha]
+    detajet = [json.loads(e["detajet_json"] or "{}") for e in te_gjitha]
     info = {"filtruar": filtruar, "gabime": gabime_perkthimi + gabime_nxjerrje,
-            "rajonale": [json.loads(e["detajet_json"] or "{}").get("rajonale") is True
-                         for e in te_gjitha]}
+            "rajonale": [d.get("rajonale") is True for d in detajet], "detajet": detajet}
     return rezultatet, ngjarjet, sekonda, info
 
 
@@ -80,10 +103,33 @@ def pjese(a, b):
     return a / b if b else 0.0
 
 
-def mat(gold, rezultatet, ngjarjet, rajonale=None):
+def pjese_ose_none(a, b):
+    """Si pjese(), por None kur emëruesi është 0 (s'ka çfarë të matet)."""
+    return a / b if b else None
+
+
+def wilson(k, n, z=1.96):
+    """Intervali Wilson 95% për k suksese nga n, i rrumbullakuar në 2 shifra; None kur n = 0.
+    I saktë edhe për n të vogël dhe për k = 0 ose k = n (ndryshe nga intervali normal)."""
+    if not n:
+        return None
+    p = k / n
+    qendra = (p + z * z / (2 * n)) / (1 + z * z / n)
+    gjeresia = z * (p * (1 - p) / n + z * z / (4 * n * n)) ** 0.5 / (1 + z * z / n)
+    return round(qendra - gjeresia, 2), round(qendra + gjeresia, 2)
+
+
+def kn(k, n):
+    """'k/n [poshtë–lart]' për shfaqje; kurrë vetëm përqindje."""
+    w = wilson(k, n)
+    return f"{k}/{n} [{w[0]:.2f}–{w[1]:.2f}]" if w else f"{k}/{n}"
+
+
+def mat(gold, rezultatet, ngjarjet, rajonale=None, detajet=None):
     """Krahason parashikimet me gold set-in dhe kthen metrikat.
     rezultatet: {id: JSON i extractor.py}; ngjarjet: [[id, ...], ...] nga correlator.py;
-    rajonale: [bool, ...] flamuri "rajonale" i çdo ngjarjeje (None = s'kontrollohet)."""
+    rajonale: [bool, ...] flamuri "rajonale" i çdo ngjarjeje (None = s'kontrollohet);
+    detajet: [dict, ...] detajet_json e çdo ngjarjeje (None = rreziku/aktori s'maten)."""
     tp = fp = fn = tn = lloji_ok = kosova_ok = 0
     gjuhet = defaultdict(lambda: {"tp": 0, "fp": 0, "fn": 0})
     mungojne, alarme, lloji_gabim = [], [], []
@@ -128,6 +174,60 @@ def mat(gold, rezultatet, ngjarjet, rajonale=None):
     rajonale_sakta = {k for k in rajonale_pritura & sakta
                       if rajonale is None or flamuri.get(frozenset(te_pritura[k])) is True}
 
+    # K9: kategoria sipas artikullit (lista = disa kategori të pranuara)
+    kategoria_ok, kategoria_gabim = 0, []
+    me_kategori = [g for g in gold if g["pritet"].get("kategoria") is not None]
+    for g in me_kategori:
+        k = g["pritet"]["kategoria"]
+        pranuara = k if isinstance(k, list) else [k]
+        mori = rezultatet.get(g["id"], {}).get("kategoria")
+        if mori in pranuara:
+            kategoria_ok += 1
+        else:
+            kategoria_gabim.append(f"{g['id']}: {mori} (pritej {'/'.join(pranuara)})")
+
+    # K9: rreziku, prioriteti dhe aktori sipas grupit. Ngjarja e grupit = ajo me më shumë artikuj
+    # të tij; grupi pa ngjarje numërohet si gabim.
+    etiketa = {g["pritet"]["grupi"]: g["pritet"] for g in gold
+               if g["pritet"]["grupi"] and g["pritet"].get("rreziku_niveli")}
+    ka_detaje = detajet is not None
+    ka_rrezik = ka_detaje and any(isinstance(d, dict) and "rreziku" in d for d in detajet)
+    nivelet = kercenimet.NIVELET
+
+    def det_e(grupi):
+        ids = te_pritura.get(grupi, set())
+        i = max(range(len(parashikuara)), key=lambda i: len(parashikuara[i] & ids), default=None)
+        return detajet[i] if i is not None and parashikuara[i] & ids else {}
+
+    rreziku_ok = prioriteti_ok = prioriteti_n = aktori_ok = aktori_n = 0
+    urgjente_grupe = urgjente_kapura = gabime_2_nivele = 0
+    konfuzioni = {n: {m: 0 for m in nivelet} for n in nivelet}  # pritet -> parashikuar
+    for grupi_i, p in etiketa.items():
+        d = det_e(grupi_i) if ka_detaje else {}
+        niveli = (d.get("rreziku") or {}).get("niveli")
+        rreziku_ok += niveli == p["rreziku_niveli"]
+        if niveli in nivelet:
+            konfuzioni[p["rreziku_niveli"]][niveli] += 1
+            gabime_2_nivele += {niveli, p["rreziku_niveli"]} == {nivelet[0], nivelet[2]}
+        if p.get("prioriteti"):
+            prioriteti_n += 1
+            prioriteti_ok += d.get("prioriteti") == p["prioriteti"]
+        if p.get("prioriteti") == "URGJENTE":
+            urgjente_grupe += 1
+            urgjente_kapura += d.get("prioriteti") == "URGJENTE"
+        if p.get("aktori"):
+            aktori_n += 1
+            aktori_ok += d.get("aktori") == p["aktori"]
+    # Precision e URGJENTE: ngjarjet e parashikuara URGJENTE, grupi kryesor i të cilave është
+    # URGJENTE; ngjarjet nga artikuj jo-sigurie (pa grup) janë alarme të rreme
+    urgjente_parashikuara = [n for n, d in zip(parashikuara, detajet or [])
+                             if isinstance(d, dict) and d.get("prioriteti") == "URGJENTE"]
+    urgjente_sakta = sum(etiketa.get(Counter(grupi[i] for i in n).most_common(1)[0][0], {})
+                         .get("prioriteti") == "URGJENTE" for n in urgjente_parashikuara)
+
+    def vetem_me_rrezik(v):
+        return v if ka_rrezik else None
+
     return {
         "precision": pjese(tp, tp + fp), "recall": pjese(tp, tp + fn),
         "tp": tp, "fp": fp, "fn": fn, "negative": fp + tn,
@@ -141,14 +241,35 @@ def mat(gold, rezultatet, ngjarjet, rajonale=None):
         "ngjarje_gabim": sorted(set(te_pritura) - sakta),
         "rajonale_sakta": len(rajonale_sakta), "rajonale_gjithsej": len(rajonale_pritura),
         "rajonale_gabim": sorted(rajonale_pritura - rajonale_sakta),
+        # K9 (None = s'u mat: pa detaje ose pa rreziku.py, ose emëruesi 0)
+        "kategoria_ok": kategoria_ok, "kategoria_gjithsej": len(me_kategori),
+        "kategoria_gabim": kategoria_gabim,
+        "rreziku_ok": vetem_me_rrezik(rreziku_ok), "rreziku_gjithsej": vetem_me_rrezik(len(etiketa)),
+        "prioriteti_ok": vetem_me_rrezik(prioriteti_ok), "prioriteti_gjithsej": vetem_me_rrezik(prioriteti_n),
+        "urgjente_precision": vetem_me_rrezik(pjese_ose_none(urgjente_sakta, len(urgjente_parashikuara))),
+        "urgjente_recall": vetem_me_rrezik(pjese_ose_none(urgjente_kapura, urgjente_grupe)),
+        "urgjente_sakta": vetem_me_rrezik(urgjente_sakta),
+        "urgjente_parashikuara": vetem_me_rrezik(len(urgjente_parashikuara)),
+        "urgjente_kapura": vetem_me_rrezik(urgjente_kapura), "urgjente_grupe": vetem_me_rrezik(urgjente_grupe),
+        "aktori_ok": aktori_ok if ka_detaje else None, "aktori_gjithsej": aktori_n if ka_detaje else None,
+        "rreziku_konfuzioni": vetem_me_rrezik(konfuzioni),
+        "gabime_2_nivele": vetem_me_rrezik(gabime_2_nivele),
+        "intervalet": {
+            "precision": wilson(tp, tp + fp), "recall": wilson(tp, tp + fn),
+            "kategoria": wilson(kategoria_ok, len(me_kategori)),
+            "rreziku": vetem_me_rrezik(wilson(rreziku_ok, len(etiketa))),
+            "prioriteti": vetem_me_rrezik(wilson(prioriteti_ok, prioriteti_n)),
+            "urgjente_precision": vetem_me_rrezik(wilson(urgjente_sakta, len(urgjente_parashikuara))),
+            "urgjente_recall": vetem_me_rrezik(wilson(urgjente_kapura, urgjente_grupe)),
+        },
     }
 
 
 def shfaq(m, sekonda, n, info):
     manuale = n * MINUTA_MANUALE
     print(f"\n=== Rezultati mbi gold set-in ({n} artikuj sintetikë) ===")
-    print(f"Zbulimi i ngjarjeve:    precision {m['precision']:.2f} · recall {m['recall']:.2f}"
-          f"  (gjetur saktë {m['tp']}, munguan {m['fn']})")
+    print(f"Zbulimi i ngjarjeve:    precision {kn(m['tp'], m['tp'] + m['fp'])}"
+          f" · recall {kn(m['tp'], m['tp'] + m['fn'])}")
     print(f"Alarme të rreme:        {m['fp']} nga {m['negative']} artikuj pa kërcënim")
     print(f"Lloji i saktë:          {m['lloji_ok']}/{m['tp']}")
     print(f"Brenda/jashtë Kosovës:  {m['kosova_ok']}/{m['tp']}")
@@ -159,6 +280,19 @@ def shfaq(m, sekonda, n, info):
     print(f"Bashkime të gabuara:    {m['bashkime_gabim']}")
     print(f"Ngjarje rajonale saktë: {m['rajonale_sakta']}/{m['rajonale_gjithsej']}"
           "  (jashtë Kosovës, me flamurin 'rajonale')")
+    print(f"Kategoria e saktë:      {kn(m['kategoria_ok'], m['kategoria_gjithsej'])}  (sipas artikullit)")
+    if m["rreziku_ok"] is None:
+        print("Rreziku/URGJENTE:       e pamatur (rreziku.py mungonte gjatë eval-it)")
+    else:
+        print(f"Niveli i rrezikut:      {kn(m['rreziku_ok'], m['rreziku_gjithsej'])}  (sipas grupit)"
+              f" · gabime i lartë<->i ulët: {m['gabime_2_nivele']}")
+        print(f"Prioriteti i saktë:     {kn(m['prioriteti_ok'], m['prioriteti_gjithsej'])}")
+        print(f"URGJENTE:               precision {kn(m['urgjente_sakta'], m['urgjente_parashikuara'])}"
+              f" · recall {kn(m['urgjente_kapura'], m['urgjente_grupe'])}")
+        for pritej, rreshti in m["rreziku_konfuzioni"].items():
+            print(f"  pritej {pritej:8} -> " + ", ".join(f"{k}: {v}" for k, v in rreshti.items()))
+    if m["aktori_ok"] is not None and m["aktori_gjithsej"]:
+        print(f"Aktori (K3):            {kn(m['aktori_ok'], m['aktori_gjithsej'])}")
     print(f"Koha:                   {sekonda:.0f} s ({pjese(sekonda, n):.1f} s/artikull) kundrejt "
           f"~{manuale} min manualisht (supozim {MINUTA_MANUALE} min/artikull)")
     print(f"Filtruar pa model:      {info['filtruar']} · gabime të modelit: {info['gabime']}")
@@ -173,6 +307,8 @@ def shfaq(m, sekonda, n, info):
         print(f"Ngjarje të pabashkuara saktë: {', '.join(m['ngjarje_gabim'])}")
     if m["rajonale_gabim"]:
         print(f"Rajonale gabim: {', '.join(m['rajonale_gabim'])}")
+    if m["kategoria_gabim"]:
+        print("Kategoria gabim: " + "; ".join(m["kategoria_gabim"]))
 
 
 def ruaj_rezultatin(m, sekonda, n):
@@ -227,6 +363,56 @@ def kontrollo():
     # Pa flamuj (rajonale=None) mjafton grupi i saktë
     assert mat(gold_r, rez_r, [["a5", "a6"]])["rajonale_sakta"] == 1
 
+    # K9: kategoria, rreziku dhe URGJENTE me detaje të shpikura
+    def art(id_, grupi, **etiketa):
+        return {"id": id_, "gjuha": "sq", "pritet": {"is_security_event": grupi is not None,
+                                                    "in_kosovo": True, "type": [], "grupi": grupi,
+                                                    **etiketa}}
+    gold_k = [art("k1", "U1", kategoria="ushtarak_serbia", rreziku_niveli="i lartë", prioriteti="URGJENTE"),
+              art("k2", "U2", kategoria=["dron_hapesire_ajrore", "tjeter"], rreziku_niveli="i lartë",
+                  prioriteti="URGJENTE"),
+              art("k3", "R1", kategoria="kibernetik", rreziku_niveli="i mesëm", prioriteti="RAPORT",
+                  aktori="rusia"),
+              art("k4", None),  # jo-sigurie
+              art("k6", "U3", kategoria="kibernetik", rreziku_niveli="i lartë", prioriteti="URGJENTE")]
+    rez_k = {"k1": {"is_security_event": True, "kategoria": "ushtarak_serbia"},
+             "k2": {"is_security_event": True, "kategoria": "tjeter"},
+             "k3": {"is_security_event": True, "kategoria": "dezinformim"},
+             "k4": {"is_security_event": True, "kategoria": "tjeter"}}  # k6 s'u nxorr fare
+
+    def d(niveli, prioriteti, **shtese):
+        return {"rreziku": {"niveli": niveli}, "prioriteti": prioriteti, **shtese}
+    ngj_k = [["k1"], ["k2"], ["k3"], ["k4"]]
+    det_k = [d("i lartë", "URGJENTE"), d("i ulët", "ARKIV"), d("i mesëm", "RAPORT", aktori="rusia"),
+             d("i lartë", "URGJENTE")]
+    m = mat(gold_k, rez_k, ngj_k, detajet=det_k)
+    assert (m["kategoria_ok"], m["kategoria_gjithsej"]) == (2, 4), m  # lista pranohet; k3, k6 gabim
+    assert (m["rreziku_ok"], m["rreziku_gjithsej"], m["gabime_2_nivele"]) == (2, 4, 1), m  # U3 pa ngjarje
+    assert m["urgjente_recall"] == 1 / 3 and m["urgjente_precision"] == 0.5, m  # k4 = alarm i rremë
+    assert (m["aktori_ok"], m["aktori_gjithsej"], m["prioriteti_ok"]) == (1, 1, 2), m
+    assert m["rreziku_konfuzioni"]["i lartë"] == {"i lartë": 1, "i mesëm": 0, "i ulët": 1}, m
+    assert m["intervalet"]["urgjente_precision"] == wilson(1, 2), m
+    # Pa detaje (ose pa rreziku.py): çelësat ekzistojnë, me vlerë None
+    m = mat(gold_k, rez_k, ngj_k)
+    assert all(m[k] is None for k in ("rreziku_ok", "rreziku_gjithsej", "urgjente_precision",
+                                      "urgjente_recall", "aktori_ok", "gabime_2_nivele")), m
+    assert m["kategoria_ok"] == 2  # kategoria s'varet nga rreziku.py
+    m = mat(gold_k, rez_k, ngj_k, detajet=[{"rajonale": False}] * 4)  # detaje, por pa rreziku.py
+    assert m["rreziku_ok"] is None and m["aktori_gjithsej"] == 1, m
+    # Asnjë URGJENTE e parashikuar -> precision None (jo 0, jo exception), recall 0
+    m = mat(gold_k, rez_k, ngj_k, detajet=[d("i mesëm", "RAPORT")] * 4)
+    assert m["urgjente_precision"] is None and m["urgjente_recall"] == 0.0, m
+    # E27: jashtë Kosovës, por ngjarje sigurie -> numërohet te rajonale
+    e27 = art("k7", "E27", kategoria="ushtarak_serbia", rreziku_niveli="i mesëm", prioriteti="RAPORT")
+    e27["pritet"]["in_kosovo"] = False
+    m = mat(gold_k + [e27], {**rez_k, "k7": {"is_security_event": True, "in_kosovo": False}},
+            ngj_k + [["k7"]], [False] * 4 + [True], det_k + [d("i mesëm", "RAPORT", rajonale=True)])
+    assert (m["rajonale_gjithsej"], m["rajonale_sakta"], m["rreziku_gjithsej"]) == (1, 1, 5), m
+    # Intervali Wilson 95% (me 2 shifra), edhe për n të vogël
+    assert wilson(4, 5) == (0.38, 0.96) and wilson(9, 10) == (0.6, 0.98), (wilson(4, 5), wilson(9, 10))
+    assert wilson(5, 5) == (0.57, 1.0) and wilson(0, 0) is None and kn(0, 0) == "0/0"
+    assert kn(4, 5) == "4/5 [0.38–0.96]"
+
 
 if __name__ == "__main__":
     kontrollo()
@@ -235,7 +421,7 @@ if __name__ == "__main__":
         sys.exit("Ollama nuk po punon. Nise me 'ollama serve' dhe provo përsëri.")
     print(f"Gold set: {len(gold)} artikuj. Pipeline-i po kalon (mund të zgjasë disa minuta)...")
     rezultatet, ngjarjet, sekonda, info = ekzekuto(gold)
-    metrikat = mat(gold, rezultatet, ngjarjet, info["rajonale"])
+    metrikat = mat(gold, rezultatet, ngjarjet, info["rajonale"], info["detajet"])
     shfaq(metrikat, sekonda, len(gold), info)
     ruaj_rezultatin(metrikat, sekonda, len(gold))
     print(f"\nU ruajt {REZULTATI}")
