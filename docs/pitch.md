@@ -26,10 +26,11 @@
 
 ## Burimet dhe ligji (thuaje me një fjali, dhe përgjigju nëse pyesin)
 
-- **Çfarë mbledhim:** media publike (RSS), GDELT dhe burime zyrtare. `robots.txt` respektohet, ruhet vetëm fragmenti dhe URL-ja, emrat e personave maskohen, dhe modeli punon lokalisht, pa cloud.
-- **Telegram:** e lexuam kushtet e tij (Content Licensing). Ato ndalojnë scraping-un dhe përdorimin e të dhënave për AI. Prandaj **s'e mbledhim automatikisht**: analisti i ndjek kanalet me dorë dhe shënon atë që sheh.
-- **Demo live:** përdor **kanalin privat të ekipit** ose forumin demo, me postime që i shkruan ekipi, përmes Bot API-t zyrtar, pa model dhe pa trajnim. Asnjë kanal i jashtëm s'mblidhet.
-- **Facebook dhe Instagram:** pa API publik, dhe s'bëjmë scraping.
+- **Çfarë mbledhim:** media publike (RSS), GDELT, burime zyrtare dhe **postime publike nga rrjetet sociale**. Te mediat respektohet `robots.txt`, ruhet vetëm fragmenti dhe URL-ja, emrat e personave maskohen, dhe modeli punon lokalisht, pa cloud.
+- **Rrjetet sociale (live, përmes Apify):** Reddit dhe X, me kërkime për kërcënime ndaj Kosovës. Ruhet vetëm teksti, data dhe URL-ja, pa autorin, përmendjet ose email-et. Kufiri i buxhetit është në kod (200 postime dhe $0.30 për ekzekutim). Çdo postim social merr Admiralty **F** dhe mbetet gjithmonë "për verifikim": sinjal i hershëm, jo konfirmim.
+- **Telegram:** vetëm kanale publike të mediave, institucioneve dhe aktorëve shtetërorë, nga një listë që e miraton ekipi me FSK-në. Lista është ende bosh, ndaj sot nuk mblidhet asgjë nga Telegram. Kushtet e Telegram-it e kufizojnë scraping-un dhe përdorimin për AI, ndaj përdorimi operacional është vendim ligjor i FSK-së.
+- **Demo live:** përdor **kanalin privat të ekipit** ose forumin demo, me postime që i shkruan ekipi, përmes Bot API-t zyrtar, pa model dhe pa trajnim.
+- **Facebook dhe Instagram:** nuk mblidhen.
 - **Individët privatë s'profilohen.** Ndiqen organizata, media, institucione dhe aktorë shtetërorë.
 
 ## Plani rezervë
@@ -46,7 +47,7 @@
 | Si e dini që 85% do të thotë 85%? | Modeli kalibrohet nga vendimet e analistit dhe matet me validim të kryqëzuar. Përdoret vetëm nëse i kalon rregullat. Deri sa të ketë mjaft etiketa (80+), besueshmëria vjen nga rregulla të qarta, dhe e themi hapur. |
 | Pse s'e vendos LLM-i besueshmërinë? | Modelet gjuhësore e japin keq sigurinë e tyre. Ne e llogarisim nga provat që mund t'i kontrolloni. |
 | Po nëse një lajm ripostohet 10 herë? | Kopjet dhe përkthimet grupohen sipas origjinës (ngjashmëri teksti, përkthimi ose citim i qartë). Në testin tonë, Koha + ripostimi + përkthimi mbeti 54%, jo 91%, dhe Admiralty doli B6, jo B1. Kanalet sociale numërohen gjithsej si një burim. |
-| A mblidhni nga Telegram ose Facebook? | Jo automatikisht. Kushtet e Telegram-it ndalojnë scraping-un dhe përdorimin për AI, dhe Facebook s'ka API publik. Analisti i ndjek me dorë. Demo-ja live përdor vetëm kanalin e ekipit. |
+| A mblidhni nga rrjetet sociale? | Po, postime publike nga Reddit dhe X përmes Apify, vetëm ato që përmendin Kosovën, pa autorin dhe me kufi buxheti. Marrin gjithmonë Admiralty F, pra janë sinjal për verifikim dhe jo konfirmim. Telegram vetëm për kanale publike institucionale të miratuara (lista ende bosh). Facebook dhe Instagram nuk mblidhen. |
 | A profiloni njerëz? | Jo. Ndiqen organizata, media dhe aktorë shtetërorë. Emrat e personave privatë maskohen me rregulla, dhe ruhet vetëm fragmenti dhe URL-ja. |
 | Pse Admiralty? | Është standardi i NATO-s: shkronja (A–F) për burimin, numri (1–6) për informacionin. Burimet e hapura s'marrin kurrë "A" automatikisht. |
 | A funksionon me lajme reale? | Po, pipeline-i mbledh nga mediat reale. Metrikat e sakta janë mbi të dhëna sintetike, dhe për to e themi qartë. |
@@ -56,5 +57,6 @@
 
 - "Saktësi 100%" ose numra nga ngjarjet sintetike si rezultate reale.
 - "AI vendos": vendimi është i analistit.
-- Që mbledhim nga Telegram ose Facebook, ose që demo-ja live është platformë reale.
+- Që mbledhim nga Facebook/Instagram, ose nga Telegram para se lista të miratohet; që demo-ja live është platformë reale.
+- Që një postim social "konfirmon" diçka: është gjithmonë F, për verifikim.
 - Emra personash ose akuza ndaj individëve.
