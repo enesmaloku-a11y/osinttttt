@@ -47,7 +47,7 @@ Before this branch, the dashboard **did not start outside Windows**, and a live 
 | Med | `processor.py:107` | Overwrites the raw `teksti` with the cleaned/cut text, so `verifiko` is weaker after translation (README says this) | Store the cleaned text in its own column (schema change: the team decides) |
 | Med (legal) | `collector.py:55`, `db.py:18` | Full article text is scraped (no robots.txt check) and stored together with personal names; only `summary` is masked | Keep `*.db` out of git (already done); state in the pitch "research use, public sources"; P2: store only translation/summary |
 | Med (legal) | `kontekst_kibernetik.py` (branch) | EuRepoC terms: non-commercial/scientific use only | Keep it as written in the docstring; mention it if the project becomes commercial |
-| Low (sec) | `dashboard.py` folium popup | Article/LLM titles went raw into popup HTML | **Fixed** 11a3f85: `html.escape` |
+| Low (sec) | `dashboard.py` folium popup | Article/LLM titles went raw into popup HTML | **Fixed** 11a3f85 + e3753c0: `html.escape` plus `` ` ``/`$`, because folium places the text inside a JS template literal |
 | Low | `eval/evaluate.py:29` | The comment says "the dashboard reads rezultati.json", but nothing reads it | Owner of eval/dashboard: show it or delete the comment (file is hot, not touched) |
 | Low | `processor.py:73` | 300 s timeout × 3 tries per chunk; one slow article blocks the run | Lower it, or move it to env |
 | Low | `.gitignore` | `CLAUDE.md` is ignored, so agent instructions are not shared between agents | Put team rules in a committed `AGENTS.md` |
@@ -91,7 +91,7 @@ Before this branch, the dashboard **did not start outside Windows**, and a live 
 | a2d8268 | `ekzekuto.py` cross-platform; the dashboard starts on Linux/macOS (tested with Streamlit AppTest, and lock tested across 2 processes) |
 | 903328a | `OSINT_DB` / `OLLAMA_URL` / `OLLAMA_MODEL` + `.env.example` |
 | 78f6433 | `demo.py`: 36 synthetic articles → 15 events (cross-language merges, regional events) without Ollama |
-| 11a3f85 | `html.escape` in map popups |
+| 11a3f85, e3753c0 | Map popups: escape HTML and JS template-literal characters (tested with a payload) |
 | 02dc861 | README: Linux/macOS, demo, cron, outdated limitations removed |
 | 078ccb0 | EUvsDisinfo context in the pipeline and in the dashboard |
 
