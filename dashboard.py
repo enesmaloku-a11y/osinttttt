@@ -169,6 +169,19 @@ def kartela(e, skeda):
                  + (f"  ·  **Admiralty:** {kodi}" if kodi else ""))
         if p == "URGJENTE" and raporti.per_verifikim(e):
             st.warning("Për verifikim, jo për veprim: besueshmëria është nën 80% dhe s'ka konfirmim.")
+        # Lista e 21 kategorive (rreziku.py): kryesorja + shtesat, ndikimi dhe urgjenca
+        v21 = det.get("v21") if isinstance(det.get("v21"), dict) else {}
+        if v21:
+            emrat = [f"{n}. {kercenimet.KATEGORITE_21[n]['emri']}" for n in v21.get("kategorite") or []
+                     if n in kercenimet.KATEGORITE_21]
+            ndikimi = raporti.pastro(v21.get("ndikimi"), 20) or "–"
+            st.write(f"**Kategoritë (lista e 21):** {emrat[0] + ' (kryesore)' if emrat else '–'}"
+                     + (f" + {', '.join(emrat[1:])}" if len(emrat) > 1 else "")
+                     + f"  ·  **Ndikimi:** {ndikimi}  ·  **Urgjenca:** {raporti.pastro(v21.get('urgjenca'), 20) or '–'}")
+            st.caption(f"Ndikimi {ndikimi}: {kercenimet.NDIKIMET.get(v21.get('ndikimi'), '')} "
+                       f"({raporti.pastro(v21.get('pse'), 120)}). Nivele paraprake, për validim nga përgjegjësi.")
+            if v21.get("verifikim_urgjent") is True:
+                st.error("Verifikim urgjent: ndikim potencialisht i rëndë me prova të kufizuara.")
         shenj = ", ".join(kercenimet.SHENJESTRAT.get(s, s) for s in det.get("shenjestrat") or []) or "-"
         aktori = det.get("aktori")
         st.write(f"**Kategoria:** {raporti.pastro(raporti.kategoria(e), 80)}  ·  "

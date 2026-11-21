@@ -638,6 +638,186 @@ KATEGORITE = {
 }
 
 
+# ---------------- Lista e përbashkët me 21 kategori (paraprake, për shqyrtim) ----------------
+# Shtresë mbi K1: ID-të e KATEGORITE s'ndryshojnë. Një ngjarje merr kategorinë kryesore (nga K1
+# kur ka) dhe kategori shtesë (nga fjalët kyçe, aktori, shenjestrat). I miraton personi përgjegjës.
+# "fjale": rrënjë në shqip, serbisht (latinisht) dhe anglisht; teksti cirilik kthehet më parë në latinisht.
+# "afatgjate": zhvillim afatgjatë, jo ngjarje në zhvillim (fusha "urgjenca").
+KATEGORITE_21 = {
+    1: {"emri": "Dhuna e armatosur dhe grupet e armatosura",
+        "perfshin": "Incidente të armatosura, sulme dhe veprimtari të organizuara të dhunshme të raportuara "
+                    "nga burime publike.",
+        "afatgjate": False,
+        "fjale": ["armë", "armatos", "të shtëna", "breshëri", "oruž", "naoružan", "pucnj", "pucal",
+                  "armed", "gunfire", "gunmen", "shooting", "weapons"]},
+    2: {"emri": "Sabotimi dhe dëmtimi i infrastrukturës kritike",
+        "perfshin": "Dëmtime të qëllimshme ose të dyshuara të energjisë, ujit, komunikimit, transportit dhe "
+                    "objekteve të shërbimeve esenciale. Shkaku ruhet si i panjohur derisa të ketë prova.",
+        "afatgjate": False,
+        "fjale": ["sabot", "diverzij", "infrastruktur", "ibër-lepenc", "ibar-lepenac", "trafostacion",
+                  "trafostanic", "substation", "largpërçues", "dalekovod", "pipeline", "gazivod"]},
+    3: {"emri": "Dhuna gjatë tubimeve dhe trazirat",
+        "perfshin": "Sulme ndaj njerëzve, institucioneve ose personelit ndërkombëtar, shkatërrim prone dhe "
+                    "pengim i shërbimeve emergjente. Protestat paqësore trajtohen si aktivitet civil.",
+        "afatgjate": False,
+        "fjale": ["trazir", "përleshj", "barrikad", "gaz lotsjellës", "neredi", "nemir", "suzavac",
+                  "riot", "clashes", "barricade", "tear gas"]},
+    4: {"emri": "Përshkallëzimi ushtarak dhe tensionet rajonale",
+        "perfshin": "Zhvillime të konfirmuara publikisht që ndryshojnë mjedisin e sigurisë, deklarata "
+                    "kërcënuese dhe incidente me potencial për përshkallëzim.",
+        "afatgjate": False,
+        "fjale": ["gatishmëri", "ushtria serbe", "ushtrisë serbe", "trupa", "dron", "borbena gotovost",
+                  "borbenu gotovost", "vojska srbije", "vojske srbije", "kopnena zona", "troops",
+                  "combat readiness", "military build", "drone"]},
+    5: {"emri": "Sulmet kibernetike",
+        "perfshin": "Ransomware, ndërprerje shërbimesh, komprometim llogarish, vjedhje ose manipulim të "
+                    "dhënash dhe sulme përmes furnitorëve digjitalë.",
+        "afatgjate": False,
+        "fjale": ["kibernet", "haker", "ransomware", "ddos", "malware", "phishing", "sajber",
+                  "cyber", "hack", "data breach", "curenje podataka", "rrjedhje të dhënash"]},
+    6: {"emri": "Krimi i organizuar dhe trafikimi",
+        "perfshin": "Trafikim armësh, kontrabandë, financim kriminal dhe lidhje të dokumentuara me "
+                    "veprimtari të dhunshme.",
+        "afatgjate": False,
+        "fjale": ["kontraband", "trafikim", "trafikant", "krim i organizuar", "krimit të organizuar",
+                  "narkotik", "drog", "šverc", "krijumčar", "organizovan kriminal",
+                  "organizovanog kriminala", "smuggl", "trafficking", "organized crime"]},
+    7: {"emri": "Terrorizmi dhe ekstremizmi i dhunshëm",
+        "perfshin": "Kërcënime konkrete, nxitje e dhunës, rekrutim për dhunë dhe incidente të "
+                    "dokumentuara. Vlerësimi bazohet në sjellje dhe prova.",
+        "afatgjate": False,
+        "fjale": ["terror", "ekstremist", "ekstremizm", "ekstremizam", "radikaliz", "xhihad", "džihad",
+                  "isis", "extremist", "extremism", "jihad"]},
+    8: {"emri": "Dezinformimi dhe manipulimi i informacionit",
+        "perfshin": "Pretendime të rreme ose të manipuluara me potencial për panik, dhunë ose pengim të "
+                    "reagimit institucional. Koordinimi dhe autorësia kërkojnë verifikim më vete.",
+        "afatgjate": False,
+        "fjale": ["dezinform", "lajm i rremë", "lajme të rreme", "lajmi i rremë", "propagand",
+                  "lažne vesti", "lažna vest", "dezinformacij", "disinform", "fake news", "misinformation"]},
+    9: {"emri": "Imitimi i institucioneve dhe njoftimet e falsifikuara",
+        "perfshin": "Llogari të rreme institucionale, paralajmërime të falsifikuara emergjence, dokumente "
+                    "të fabrikuara dhe përmbajtje audio/video e manipuluar.",
+        "afatgjate": False,
+        "fjale": ["llogari të rreme", "llogari e rreme", "profil i rremë", "profile të rreme", "falsifik",
+                  "deepfake", "lažni profil", "lažno se predstav", "krivotvor", "fake account",
+                  "fake profile", "impersonat", "forged", "fabricated"]},
+    10: {"emri": "Kërcënimet ndaj civilëve dhe komuniteteve",
+         "perfshin": "Dhunë, kërcënime konkrete, frikësim dhe sulme ndaj komuniteteve, gazetarëve, "
+                     "punonjësve publikë ose personelit humanitar.",
+         "afatgjate": False,
+         "fjale": ["gazetar", "frikësim", "ndëretnik", "humanitar", "novinar", "zastraš", "međuetni",
+                   "journalist", "intimidat", "interethnic"]},
+    11: {"emri": "Ndërprerja e komunikimit dhe shërbimeve emergjente",
+         "perfshin": "Humbje e telefonisë, internetit, sistemeve të njoftimit ose mundësisë për të "
+                     "kontaktuar shërbimet emergjente.",
+         "afatgjate": False,
+         "fjale": ["pa internet", "rrjeti mobil", "rrjetit mobil", "telekom", "ipko", "numri 112",
+                   "bez interneta", "prekid interneta", "mobilne mreže", "telecom", "outage",
+                   "emergency number"]},
+    12: {"emri": "Ndërprerja e furnizimit dhe transportit",
+         "perfshin": "Mungesa serioze të ujit, ushqimit, karburantit ose barnave dhe pengesa që cenojnë "
+                     "furnizimin me mallra esenciale.",
+         "afatgjate": False,
+         "fjale": ["mungesë e", "mungesa e", "karburant", "furnizim", "nestašic", "snabdevan", "gorivo",
+                   "shortage", "fuel supply"]},
+    13: {"emri": "Fatkeqësitë natyrore dhe aksidentet industriale",
+         "perfshin": "Përmbytje, zjarre, tërmete, rrjedhje kimike, ndotje dhe aksidente me pasoja për "
+                     "njerëzit ose shërbimet esenciale.",
+         "afatgjate": False,
+         "fjale": ["përmbytj", "zjarr", "tërmet", "ndotj", "poplav", "požar", "zemljotres", "zagađen",
+                   "flood", "wildfire", "earthquake", "pollution", "chemical spill"]},
+    14: {"emri": "Kriza shëndetësore",
+         "perfshin": "Shpërthime sëmundjesh, ngjarje me shumë të lënduar, mbingarkesë spitalore dhe "
+                     "ndërprerje të kujdesit shëndetësor.",
+         "afatgjate": False,
+         "fjale": ["epidemi", "pandemi", "helmim", "fruth", "trovanj", "male boginje", "outbreak",
+                   "poisoning", "measles"]},
+    15: {"emri": "Dobësitë energjetike dhe varësitë kritike",
+         "perfshin": "Defekte të përsëritura, kapacitete të pamjaftueshme rezervë dhe varësi nga "
+                     "furnitorë ose sisteme me alternativa të kufizuara.",
+         "afatgjate": True,
+         "fjale": ["energji", "energjet", "rrym", "reduktim", "kostt", "elektroenerget", "struj",
+                   "redukcij", "energet", "blackout", "power cut", "electricity", "energy"]},
+    16: {"emri": "Pengimi i funksionimit institucional",
+         "perfshin": "Zhvillime që cenojnë vazhdimësinë e shërbimeve publike, vendimmarrjen emergjente, "
+                     "financimin ose funksionimin e institucioneve.",
+         "afatgjate": True,
+         "fjale": ["struktura paralele", "strukturat paralele", "bojkot", "dorëheq", "paralelne institucij",
+                   "paralelnih institucija", "ostavk", "parallel structures", "parallel institutions",
+                   "boycott", "resign"]},
+    17: {"emri": "Korrupsioni dhe cenimi i integritetit institucional",
+         "perfshin": "Gjetje të dokumentuara për abuzim, prokurime problematike ose ndërhyrje që "
+                     "dobësojnë aftësinë e institucioneve të sigurisë.",
+         "afatgjate": True,
+         "fjale": ["korrupsion", "ryshfet", "keqpërdorim", "prokurim", "korupcij", "zloupotreb",
+                   "nabavk", "corruption", "bribe", "abuse of office", "procurement"]},
+    18: {"emri": "Dobësimi i bashkëpunimit ndërkombëtar",
+         "perfshin": "Ndryshime të konfirmuara në marrëveshje, asistencë, bashkëpunim dhe mbështetje "
+                     "ndërkombëtare që ndikojnë në siguri.",
+         "afatgjate": True,
+         "fjale": ["masat ndëshkuese", "masave ndëshkuese", "pezull", "sanksion", "sankcij", "suspend",
+                   "sanction", "usaid", "punitive measures"]},
+    19: {"emri": "Pengesat ndaj integrimit dhe bashkëpunimit të sigurisë",
+         "perfshin": "Zhvillime diplomatike ose institucionale që ndikojnë në pjesëmarrjen në mekanizma "
+                     "ndërkombëtarë, shkëmbimin e informacionit dhe bashkëpunimin.",
+         "afatgjate": True,
+         "fjale": ["nato", "partneritet për paqe", "këshill i evropës", "këshillin e evropës", "interpol",
+                   "europol", "unesco", "njohj", "anëtarësim", "priznanj", "članstv",
+                   "partnership for peace", "council of europe", "recognition", "membership"]},
+    20: {"emri": "Humbja e kapaciteteve njerëzore",
+         "perfshin": "Trende të dokumentuara të mungesës së personelit, emigrimit të specialistëve dhe "
+                     "vështirësive në rekrutim ose mbajtje të stafit esencial.",
+         "afatgjate": True,
+         "fjale": ["emigr", "ikja e trurit", "mungesë e stafit", "mungesa e stafit", "mungesë personeli",
+                   "rekrutim", "odliv mozgova", "nedostatak kadrova", "brain drain", "staff shortage"]},
+    21: {"emri": "Ndikimi i jashtëm dhe varësitë strategjike",
+         "perfshin": "Ndryshime të dokumentuara në financim, furnizime, marrëveshje dhe ndikim të jashtëm "
+                     "që mund të cenojnë autonominë ose qëndrueshmërinë institucionale.",
+         "afatgjate": True,
+         "fjale": ["rusi", "kinë", "kina", "kinez", "rusij", "rusk", "kremlj", "kinesk", "sputnik",
+                   "russia", "kremlin", "china", "chinese", "gazprom", "huawei"]},
+}
+
+# Kategoria kryesore sipas K1 ("tjeter" s'ka: aty vendosin fjalët kyçe)
+NGA_K1 = {"grupe_te_armatosura": 1, "infrastrukture_kritike": 2, "trazira_bllokada": 3,
+          "ushtarak_serbia": 4, "dron_hapesire_ajrore": 4, "kibernetik": 5, "kufi_kontrabande": 6,
+          "ekstremizem_terrorizem": 7, "dezinformim": 8, "ekonomik_energjetik": 15,
+          "struktura_paralele": 16, "diplomatik_ligjor": 19, "spiunazh_ndikim": 21}
+# Kategori shtesë nga aktori dhe shenjestrat e nxjerra (K2)
+NGA_AKTORI = {"grupe_te_armatosura": 1, "krim_i_organizuar": 6, "grupe_ekstremiste": 7,
+              "media_propagandistike": 8, "rusia": 21, "kina": 21}
+NGA_SHENJESTRA = {"infrastrukture_kritike": 2, "komunitete": 10}
+
+# Nivelet e ndikimit: përshkruajnë ndikimin, jo besueshmërinë (ajo vlerësohet veçmas te scoring.py)
+NDIKIMET = {
+    "kritik": "Rrezik i menjëhershëm për shumë njerëz ose ndërprerje e rëndë e disa shërbimeve esenciale.",
+    "i lartë": "Rrezik serioz për njerëzit ose ndërprerje e rëndësishme e shërbimeve esenciale.",
+    "mesatar": "Dëm ose ndërprerje e konsiderueshme që kërkon vëmendje institucionale.",
+    "i ulët": "Ndikim i kufizuar, lokal dhe lehtësisht i rikuperueshëm.",
+    "i papërcaktuar": "Provat aktuale janë të pamjaftueshme për vlerësimin e ndikimit.",
+}
+# Shërbimet esenciale (infrastruktura, komunikimi, furnizimi, shëndetësia, energjia)
+SHERBIME_ESENCIALE = {2, 11, 12, 14, 15}
+
+CIR_LAT = dict(zip("абвгдђежзијклмнопрстћуфхцчш",
+                   "a b v g d đ e ž z i j k l m n o p r s t ć u f h c č š".split()))
+CIR_LAT.update({"љ": "lj", "њ": "nj", "џ": "dž"})
+_RE_21 = {n: re.compile(r"\b(?:" + "|".join(map(re.escape, sorted(k["fjale"], key=len, reverse=True)))
+                        + ")", re.I) for n, k in KATEGORITE_21.items()}
+
+
+def kategorite_21(teksti, k1=None, aktori=None, shenjestrat=()):
+    """Kthen [kryesorja, shtesat...] nga lista e 21 kategorive. Kryesorja vjen nga K1 kur ka,
+    përndryshe nga kategoria me më shumë fjalë kyçe. Listë bosh = s'ka shenja të mjaftueshme."""
+    t = "".join(CIR_LAT.get(c, c) for c in str(teksti or "").lower())
+    goditje = {n: len(r.findall(t)) for n, r in _RE_21.items()}
+    gjetura = sorted((n for n, g in goditje.items() if g), key=lambda n: -goditje[n])
+    kryesorja = (NGA_K1.get(k1) if isinstance(k1, str) else None) or (gjetura[0] if gjetura else None)
+    shtese = gjetura + [NGA_AKTORI.get(aktori) if isinstance(aktori, str) else None]
+    shtese += [NGA_SHENJESTRA.get(s) for s in shenjestrat if isinstance(s, str)] if isinstance(shenjestrat, list) else []
+    return ([kryesorja] if kryesorja else []) + sorted({n for n in shtese if n and n != kryesorja})
+
+
 def fjale_kyce_regex():
     """Të gjitha fjalët kyçe në një regex; përputhen në fillim të fjalës, pa dallim shkronjash."""
     fjalet = {f for k in KATEGORITE.values() for lista in k["fjale_kyce"].values() for f in lista}
@@ -674,9 +854,7 @@ if __name__ == "__main__":
     assert len(FUSHAT_HIBRIDE) == 13
 
     # sr_cyr duhet të jetë transliterimi i saktë i sr (kap gabime shtypi në cirilik)
-    CIR = dict(zip("абвгдђежзијклмнопрстћуфхцчш",
-                   "a b v g d đ e ž z i j k l m n o p r s t ć u f h c č š".split()))
-    CIR.update({"љ": "lj", "њ": "nj", "џ": "dž"})
+    CIR = CIR_LAT
     FUSHAT = {"emri", "pershkrimi", "fusha_hibride", "treguesit", "fjale_kyce", "aktoret_tipike",
               "shenjestrat_tipike", "rrezikshmeria_baze", "burimet_e_mbledhjes", "shembuj"}
     for id, k in KATEGORITE.items():
@@ -720,5 +898,23 @@ if __name__ == "__main__":
     assert emri("dezinformim") == "Dezinformim dhe manipulim informativ"
     assert emri("rusia") == AKTORET["rusia"] and emri("fsk") == SHENJESTRAT["fsk"]
     assert emri("panjohur_fare") == "panjohur_fare"
+    # Lista e 21 kategorive (paraprake)
+    assert list(KATEGORITE_21) == list(range(1, 22))
+    assert all(k["emri"] and k["perfshin"] and k["fjale"] for k in KATEGORITE_21.values())
+    assert all(f == f.lower().strip() for k in KATEGORITE_21.values() for f in k["fjale"])
+    assert set(NGA_K1) == set(KATEGORITE) - {"tjeter"} and set(NGA_K1.values()) <= set(KATEGORITE_21)
+    assert set(NGA_AKTORI) <= set(AKTORET) and set(NGA_SHENJESTRA) <= set(SHENJESTRAT)
+    assert list(NDIKIMET) == ["kritik", "i lartë", "mesatar", "i ulët", "i papërcaktuar"]
+    for teksti, k1, aktori, shenj, pritet in [
+            ("Serbian army troops near Kosovo, Russia supplies drones", "ushtarak_serbia", "shteti_serb",
+             ["fsk"], [4, 21]),
+            ("Хакерски напад: DDoS на болницу, epidemija", None, None, [], [5, 14]),  # cirilik + latin
+            ("Sulm kibernetik ndaj KEDS, mungesë e rrymës", "kibernetik", None,
+             ["infrastrukture_kritike"], [5, 2, 12, 15]),
+            ("Arsenal fitoi ndeshjen", "tjeter", None, [], []),
+            ("Ekstremisht nxehtë sot në Prishtinë", None, None, [], []),
+            ("Gazetari u kërcënua në Mitrovicë", None, "grupe_ekstremiste", ["komunitete"], [10, 7]),
+            ("Lajm", None, ["lista"], "jo-listë", [])]:  # tipe të gabuara s'e rrëzojnë
+        assert kategorite_21(teksti, k1, aktori, shenj) == pritet, (teksti, kategorite_21(teksti, k1, aktori, shenj))
     print(f"Kontrollet kaluan: {len(KATEGORITE)} kategori, "
           f"{len(r.pattern.split('|'))} fjalë kyçe unike.")
