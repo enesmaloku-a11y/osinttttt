@@ -79,7 +79,7 @@ KOMANDA = st.expander("Komanda: mbledhja dhe filtrat", expanded=False)
 
 # Cloud (Streamlit Cloud është Linux, pa Ollama): vetëm demo me të dhëna sintetike, pa nisje të
 # pipeline-it. OSINT_CLOUD=1 e provon këtë mënyrë edhe në Windows.
-CLOUD = os.name != "nt" or os.environ.get("OSINT_CLOUD") == "1"
+CLOUD = os.environ.get("OSINT_CLOUD", "1" if os.name != "nt" else "0") == "1"
 
 
 @st.cache_resource
