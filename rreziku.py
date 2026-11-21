@@ -45,7 +45,7 @@ MATRICA = {"i lartë": ("URGJENTE", "URGJENTE", "URGJENTE"),
            "i mesëm": ("RAPORT", "RAPORT", "MONITORIM"),
            "i ulët": ("MONITORIM", "ARKIV", "ARKIV")}
 RENDI_BURIMIT = "BCDFE"  # më i miri i pari; "A" s'jepet kurrë automatikisht (shih docs)
-SOCIALE = ("Telegram:", "YouTube:")
+SOCIALE = ("Telegram:", "YouTube:", "Reddit:", "X:")  # apify_burimi.py shton Reddit dhe X
 RASTE_PER_E = 3  # raste të dokumentuara dezinformimi -> "histori informacioni të pavlefshëm"
 DOMENI = {v: k for k, v in DOMENET.items()}  # "Koha" -> "koha.net"
 
@@ -326,6 +326,8 @@ if __name__ == "__main__":
     tg = {"mediat": ["Telegram:kanali_x", "Koha"], "gjuhet": ["sr", "sq"], "burime_te_pavarura": 1,
           "mediat_e_pavarura": ["Telegram:kanali_x"], "gjuhet_e_pavarura": ["sr"]}
     assert admiralty(tg, None, {})["kodi"] == "F6", admiralty(tg, None, {})
+    # Reddit dhe X (apify_burimi.py): sociale, shumë postime = një burim, shkronja F
+    assert admiralty({"mediat": ["Reddit:r/kosovo", "X:x.com", "Reddit:r/serbia"]}, None, {})["kodi"] == "F6"
     # Dy origjina të pavarura me gjuhë të ndryshme -> 1, si më parë
     dy = {**ripost, "burime_te_pavarura": 2, "mediat_e_pavarura": ["Koha", "N1 Serbia"],
           "gjuhet_e_pavarura": ["sq", "sr"]}

@@ -117,7 +117,7 @@ MEDIAT = {
 }
 E_PANJOHUR = 0.4  # çdo domen tjetër nga GDELT
 E_PLATFORME = 0.3
-SOCIALE = ("Telegram:", "YouTube:")
+SOCIALE = ("Telegram:", "YouTube:", "Reddit:", "X:")  # apify_burimi.py shton Reddit dhe X
 # Pesë fjalë ruajnë radhën dhe ulin përputhjet nga emrat ose temat e përbashkëta.
 PRAG_TEKST, PRAG_PERKTHIM, PRAG_CITIM = 0.60, 0.50, 0.30
 CITIM = r"sipas|prenosi|javlja|prema pisanju|according to|citing|reported by"

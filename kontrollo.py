@@ -28,6 +28,7 @@ KONTROLLET = [
                     "getattr(e, 'kontrollo', lambda: None)(); e.lexo_gold()"]),
     ("kercenimet.py", ["kercenimet.py"]),
     ("rreziku.py", ["rreziku.py"]),
+    ("apify_burimi.py", ["apify_burimi.py"]),
     ("raporti.py", ["raporti.py", "2026-11-18"]),
     # Me OSINT_NGRIRE=1 main() del para çdo hapi (as Ollama, as rrjet)
     ("main.py (ngrirja)", ["-c", "import os; os.environ['OSINT_NGRIRE'] = '1'; import main, processor; "
