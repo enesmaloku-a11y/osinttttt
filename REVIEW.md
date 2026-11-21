@@ -19,15 +19,18 @@ Before this branch, the dashboard **did not start outside Windows**, and a live 
 - [x] Offline demo DB with no Ollama or network (`demo.py`, `OSINT_DB=demo.db`)
 - [x] Run instructions for Linux/macOS, `.env.example`
 - [x] EUvsDisinfo context is actually called by the pipeline and shown in the dashboard
-- [ ] Merge the open branches in this order: `kontekst-kibernetik` → `besueshmeria-model` → `klasifikimi-taksonomia`. All three merge cleanly into main and into each other (`git merge-tree`, checked).
+- [x] `kontekst-kibernetik` (#6) and `besueshmeria-model` (#7) merged into main after `kontrollo.py`
+- [ ] **`klasifikimi-taksonomia` is blocked:** it imports `kercenimet`, which isn't in git, so `extractor.py`/`correlator.py` crash. Afron needs to commit `kercenimet.py`. After that, merge it, then #10 (lead).
 - [ ] One full live run on the demo laptop: `ollama pull`, then `python main.py 20`, then the dashboard. Record the time.
 - [ ] Freeze `eval/rezultati.json` from a real model run for the pitch slide.
 
 **P1**
-- Pin versions in `requirements.txt`. Streamlit already warns that `use_container_width` is going away after 2025-12-31.
-- A faster model for extraction (see table 4). Re-run the eval to compare.
-- A stable key for analyst decisions (finding F3).
-- One `check` script that runs every module's self-check.
+- [x] Pinned versions, `width="stretch"`, `AGENTS.md`, `kontrollo.py`
+- [x] Stable key for analyst decisions (`db.url_i_vendimit`)
+- [x] Merging by majority of group members, no transitive chaining
+- [x] `raw_text`, robots.txt, snippet instead of full text
+- [ ] A faster model for extraction (see table 4). Re-run the eval to compare.
+- [ ] Measure how the snippet (1200 characters) affects recall on real articles
 
 **P2**
 - Multilingual embeddings for correlation and less translation work.
@@ -41,16 +44,17 @@ Before this branch, the dashboard **did not start outside Windows**, and a live 
 | **P0** | `ekzekuto.py:10` (old) | `import msvcrt` is Windows-only, and `dashboard.py` imports `ekzekuto`, so the dashboard crashed on Linux/macOS | **Fixed** a2d8268: fcntl on POSIX; schtasks gives a cron message |
 | **P0** | — | No demo possible without Ollama plus the 8B model plus network | **Fixed** 78f6433: `demo.py` |
 | High | `kontekst_dezinformim.py:194` | `pasuro_te_gjitha()` was never called (dead code); the dashboard did not show `konteksti` | **Fixed** 078ccb0 |
-| Med | `dashboard.py:38` + `db.py` `vendimet` | The decision key is the URL of the *earliest* article. If a later run adds an older article to the event, the key changes and the analyst's decision silently disappears from the event | Use a stable event id: keep the key, but on lookup match any URL in `burimet` (owner: dashboard) |
-| Med | `correlator.py:153` | Compares only with `grup[0]`, so the merge is not transitive (A~B, B~C, but A≁C makes 2 events) | Compare with any member of the group (owner: correlator) |
+| Med (**fixed** d757a6d) | `dashboard.py:38` + `db.py` `vendimet` | The decision key is the URL of the *earliest* article. If a later run adds an older article to the event, the key changes and the analyst's decision silently disappears from the event | Use a stable event id: keep the key, but on lookup match any URL in `burimet` (owner: dashboard) |
+| Med (**fixed** 6b507cc) | `correlator.py:153` | Compares only with `grup[0]`, so the merge is not transitive (A~B, B~C, but A≁C makes 2 events) | Compare with any member of the group (owner: correlator) |
 | Med | `scoring.py:24,19` | Every GDELT domain counts as an independent source at 0.4. Republished wire copy pushes credibility up | Merge near-duplicate texts first (P2); add `MEDIAT` for kossev.info and rts.rs |
-| Med | `processor.py:107` | Overwrites the raw `teksti` with the cleaned/cut text, so `verifiko` is weaker after translation (README says this) | Store the cleaned text in its own column (schema change: the team decides) |
-| Med (legal) | `collector.py:55`, `db.py:18` | Full article text is scraped (no robots.txt check) and stored together with personal names; only `summary` is masked | Keep `*.db` out of git (already done); state in the pitch "research use, public sources"; P2: store only translation/summary |
+| Med (**fixed** 91c6ad3, `raw_text`) | `processor.py:107` | Overwrites the raw `teksti` with the cleaned/cut text, so `verifiko` is weaker after translation (README says this) | Store the cleaned text in its own column (schema change: the team decides) |
+| Med (legal, **fixed** 91c6ad3: robots.txt + snippet) | `collector.py:55`, `db.py:18` | Full article text is scraped (no robots.txt check) and stored together with personal names; only `summary` is masked | Keep `*.db` out of git (already done); state in the pitch "research use, public sources"; P2: store only translation/summary |
 | Med (legal) | `kontekst_kibernetik.py` (branch) | EuRepoC terms: non-commercial/scientific use only | Keep it as written in the docstring; mention it if the project becomes commercial |
 | Low (sec) | `dashboard.py` folium popup | Article/LLM titles went raw into popup HTML | **Fixed** 11a3f85 + e3753c0: `html.escape` plus `` ` ``/`$`, because folium places the text inside a JS template literal |
 | Low | `eval/evaluate.py:29` | The comment says "the dashboard reads rezultati.json", but nothing reads it | Owner of eval/dashboard: show it or delete the comment (file is hot, not touched) |
 | Low | `processor.py:73` | 300 s timeout × 3 tries per chunk; one slow article blocks the run | Lower it, or move it to env |
-| Low | `.gitignore` | `CLAUDE.md` is ignored, so agent instructions are not shared between agents | Put team rules in a committed `AGENTS.md` |
+| Low (**fixed** c9b10db) | `.gitignore` | `CLAUDE.md` is ignored, so agent instructions are not shared between agents | `AGENTS.md` committed |
+| Info | `collector.py` | Balkan Insight's robots.txt disallows all unnamed bots; Koha returns 403 on article pages (from this network) | Only the RSS summary is kept for those two; this is correct, but they are weaker sources |
 | Info | — | No secrets in the repo (grep for key/token/password: 0) | — |
 
 ## 4. Better options
