@@ -1,9 +1,9 @@
 """apify_burimi.py - Postime publike nga rrjetet sociale përmes Apify (me rekomandim të FSK-së).
 
-Platformat: Reddit (kërkim me fjalë kërcënimi) dhe kanale publike Telegram (lista KANALET_TELEGRAM).
+Platformat: Reddit dhe X (kërkim me fjalë kërcënimi) dhe kanale publike Telegram (KANALET_TELEGRAM).
 Ruhet vetëm teksti, data dhe URL-ja, pa autorin, përmendjet ose email-et. Postimet kalojnë pastaj
 nëpër të njëjtin pipeline si lajmet (përkthimi, nxjerrja, besueshmëria, rreziku). Burimet
-"Reddit:" dhe "Telegram:" janë sociale: Admiralty F, gjithmonë për verifikim.
+"Reddit:", "X:" dhe "Telegram:" janë sociale: Admiralty F, gjithmonë për verifikim.
 
 Çelësi: variabla APIFY_TOKEN ose skedari ~/.apify_token (jashtë repo-s). Pa çelës, anashkalohet.
 Buxheti: për çdo platformë s'paguhen kurrë më shumë se "maks" postime gjithsej dhe
@@ -15,9 +15,11 @@ Nis me:  python apify_burimi.py                 (vetëm kontrollet, pa internet)
 """
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 
 import collector
@@ -25,6 +27,14 @@ import db
 
 KERKIMET_REDDIT = ["Kosovo attack", "Kosovo Serbia army", "Kosovo KFOR", "Jarinje", "Banjska",
                    "Kosovo drone", "Ibar Lepenac", "napad Kosovo", "sulm Kosovë", "Kosovo war"]
+# X: sintaksa e kërkimit të avancuar; pa përgjigje dhe ripostime (paguhen, por s'sjellin gjë të re)
+PA_ZHURME = " -filter:replies -filter:retweets"
+KERKIMET_X = [k + PA_ZHURME for k in (
+    "Kosovo (attack OR army OR KFOR OR drone OR explosion OR troops)",
+    "(Kosova OR Kosovë OR Kosovës) (sulm OR ushtri OR dron OR shpërthim OR FSK)",
+    "(Kosovo OR Kosmet) (napad OR vojska OR dron OR eksplozija)",
+    "(Косово OR Космет) (напад OR војска OR дрон)",
+    "(Jarinje OR Banjska OR \"Ibar Lepenac\" OR Gazivode OR Zvečan)")]
 # Kanale publike (media, institucione, aktorë shtetërorë; jo individë). I miraton ekipi/FSK-ja.
 KANALET_TELEGRAM = []
 # Apify mban vetëm postimet që përmendin Kosovën
@@ -59,6 +69,21 @@ def artikull_telegram(m):
     return _artikull(url, f"Telegram:{kanali[:40]}", tekst.split("\n")[0][:200], tekst, m.get("date"))
 
 
+def artikull_x(t):
+    """Postim X -> dict për db.ruaj_artikull, ose None. URL-ja pa emrin e llogarisë (x.com/i/status/ID)."""
+    if not isinstance(t, dict) or t.get("type") != "tweet" or t.get("isRetweet") is True:
+        return None
+    id_, tekst = t.get("id"), t.get("text")
+    if not (isinstance(id_, str) and id_.isdigit() and isinstance(tekst, str)):
+        return None
+    tekst = re.sub(r"^(?:@\w+\s+)+", "", tekst)  # pa përmendjet në fillim
+    try:
+        data = datetime.strptime(str(t.get("createdAt")), "%a %b %d %H:%M:%S %z %Y").isoformat()
+    except ValueError:
+        data = None
+    return _artikull(f"https://x.com/i/status/{id_}", "X:x.com", tekst.split("\n")[0][:200], tekst, data)
+
+
 def _artikull(url, burimi, titulli, teksti, data):
     teksti = teksti.strip()
     if not teksti or not collector.KOSOVA.search(teksti):
@@ -68,13 +93,16 @@ def _artikull(url, burimi, titulli, teksti, data):
                 teksti=teksti, hash_sha256=collector.gjurma(teksti))
 
 
-# "maks": postime gjithsej (buxheti i $5: Reddit ~$1.15/1000, Telegram ~$0.87/1000)
+# "maks": postime gjithsej (buxheti i $5: Reddit ~$1.15/1000, X ~$0.15/1000, Telegram ~$0.87/1000)
 PLATFORMAT = {
     "reddit": {"actor": "automation-lab~reddit-scraper", "maks": 1000, "artikulli": artikull_reddit,
                "hyrja": lambda n: {"searchQueries": KERKIMET_REDDIT, "sort": "relevance", "timeFilter": "week",
                                    "maxPostsPerSource": max(1, n // len(KERKIMET_REDDIT)),
                                    "includeComments": False, "includeNsfw": False,
                                    "filterKeywords": FILTRI, "deduplicatePosts": True}},
+    "x": {"actor": "xquik~x-tweet-scraper", "maks": 1000, "artikulli": artikull_x,
+          "hyrja": lambda n: {"searchTerms": KERKIMET_X, "queryType": "Latest", "maxItems": n,
+                              "maxItemsPerTarget": max(1, n // len(KERKIMET_X))}},
     "telegram": {"actor": "automation-lab~telegram-scraper", "maks": 2000, "artikulli": artikull_telegram,
                  "hyrja": lambda n: {"channels": KANALET_TELEGRAM, "lastNDays": 7, "keywords": FILTRI,
                                      "maxMessages": max(1, n // max(1, len(KANALET_TELEGRAM))),
@@ -178,7 +206,17 @@ def kontrollet():
     for keq in ({**t, "rowType": "comment"}, {**t, "url": "https://evil.example/x"},
                 {**t, "text": "Fudbal večeras"}, {**t, "text": None}, None):
         assert artikull_telegram(keq) is None, keq
-    assert set(PLATFORMAT) == {"reddit", "telegram"}
+    x = {"type": "tweet", "id": "2124206414336049646", "text": "@a @b Kosovo army drill near Jarinje\nmore",
+         "createdAt": "Sat Nov 21 18:20:49 +0000 2026", "url": "https://x.com/llogaria/status/2124206414336049646",
+         "author": {"userName": "llogaria"}}
+    a = artikull_x(x)
+    assert a["url"] == "https://x.com/i/status/2124206414336049646" and a["burimi"] == "X:x.com"
+    assert a["titulli"] == "Kosovo army drill near Jarinje" and a["data"] == "2026-11-21T18:20:49+00:00"
+    assert "llogaria" not in json.dumps(a) and "@a" not in a["teksti"]
+    assert artikull_x({**x, "createdAt": "dje"})["data"] is None
+    for keq in ({**x, "type": "reply"}, {**x, "isRetweet": True}, {**x, "id": "../x"}, {**x, "text": "Fudbal"}, None):
+        assert artikull_x(keq) is None, keq
+    assert set(PLATFORMAT) == {"reddit", "x", "telegram"}
     assert all(callable(p["hyrja"]) and callable(p["artikulli"]) and p["maks"] > 0 for p in PLATFORMAT.values())
     print("Kontrollet kaluan: apify_burimi (pa internet).")
 
