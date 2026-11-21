@@ -1,11 +1,11 @@
 """ekzekuto.py - Nis pipeline-in (main.py) një herë, me log dhe pa dy ekzekutime njëkohësisht.
 
 Përdoret nga butoni "Ekzekuto tani" në dashboard dhe nga Windows Task Scheduler.
+Në Linux/macOS bllokimi punon me fcntl; orari automatik bëhet me cron (shih README).
 Nis me:  python ekzekuto.py 20      (deri në 20 artikuj për përkthim/nxjerrje)
 """
 import contextlib
 import json
-import msvcrt
 import os
 import subprocess
 import sys
@@ -19,14 +19,31 @@ LOCK = os.path.join(DOSJA, "pipeline.lock")
 ORARI = os.path.join(DOSJA, "orari.json")
 DETYRA = "OSINT Kosova"          # emri i detyrës në Task Scheduler
 MAX_LOG = 1_000_000              # bajt; log-u i vjetër pritet që të mos rritet pa fund
-PA_DRITARE = 0x08000000          # CREATE_NO_WINDOW: pa dritare konsole
+WINDOWS = os.name == "nt"
+PA_DRITARE = 0x08000000 if WINDOWS else 0  # CREATE_NO_WINDOW: pa dritare konsole
+
+if WINDOWS:
+    import msvcrt
+else:
+    import fcntl
 
 
 # ---------------- Bllokimi: vetëm një ekzekutim në të njëjtën kohë ----------------
 def _blloko(f):
-    """Bllokon bajtin e parë të LOCK. Windows e liron vetë kur procesi mbyllet/rrëzohet."""
+    """Bllokon bajtin e parë të LOCK. Sistemi e liron vetë kur procesi mbyllet/rrëzohet."""
     f.seek(0)
-    msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+    if WINDOWS:
+        msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+    else:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)  # OSError nëse është i zënë
+
+
+def _zhblloko(f):
+    f.seek(0)
+    if WINDOWS:
+        msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+    else:
+        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
 
 def po_punon():
@@ -36,8 +53,7 @@ def po_punon():
             _blloko(f)
         except OSError:
             return True
-        f.seek(0)
-        msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+        _zhblloko(f)
         return False
 
 
@@ -85,6 +101,8 @@ def log_fundit(rreshta=25):
 
 # ---------------- Orari automatik (Windows Task Scheduler) ----------------
 def _schtasks(*args):
+    if not WINDOWS:
+        return False, "Orari automatik nga dashboard-i punon vetëm në Windows; në Linux/macOS përdor cron (shih README)."
     r = subprocess.run(["schtasks", *args], capture_output=True, text=True, creationflags=PA_DRITARE)
     return r.returncode == 0, (r.stdout + r.stderr).strip()
 
