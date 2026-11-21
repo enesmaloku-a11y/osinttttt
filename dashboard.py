@@ -2,6 +2,7 @@
 
 Nis me:  streamlit run dashboard.py
 """
+import html
 import json
 import sqlite3
 
@@ -112,14 +113,16 @@ with tab_ngj:
     ngjarjet["det"] = ngjarjet["detajet_json"].apply(lambda d: json.loads(d or "{}"))
     for _, e in ngjarjet.dropna(subset=["lat", "lon"]).iterrows():
         sv = e["det"].get("saktesia_vendit")
-        popup = (f"{e['titulli']}<br>Besueshmëria: {e['besueshmeria']}<br>"
+        # Titulli vjen nga lajmi/modeli: escape, që HTML i tij të mos ekzekutohet në hartë
+        titulli = html.escape(e["titulli"])
+        popup = (f"{titulli}<br>Besueshmëria: {e['besueshmeria']}<br>"
                  f"Vendi: {SAKTESIA[sv]} · Vendimi: {e['statusi']}")
         if sv == "region":
             # Vend i përafërt: rreth i madh në vend të pikës, që të mos duket më i saktë se ç'është
             folium.Circle([e["lat"], e["lon"]], radius=15000, color=e["ngjyra"], fill=True,
-                          fill_opacity=0.15, tooltip=e["titulli"], popup=popup).add_to(harta)
+                          fill_opacity=0.15, tooltip=titulli, popup=popup).add_to(harta)
         else:
-            folium.Marker([e["lat"], e["lon"]], tooltip=e["titulli"], popup=popup,
+            folium.Marker([e["lat"], e["lon"]], tooltip=titulli, popup=popup,
                           icon=folium.Icon(color=e["ngjyra"])).add_to(harta)
     st.caption("Ngjyra: jeshile ≥ 70%, portokalli ≥ 40%, e kuqe < 40%. Rrethi = vendi dihet vetëm "
                "në nivel rajoni. Ngjarjet pa vend të njohur nuk dalin në hartë, por janë në listë.")
