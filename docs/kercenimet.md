@@ -199,8 +199,8 @@ Etiketuesit vendosin pa parë output-in e sistemit. Etiketat përdorin saktësis
 
 **Kufizimet e mbledhjes:**
 - Sputnik dhe RT janë nën sanksionet e BE-së për transmetim. Monitorohen vetëm përmes EUvsDisinfo/GDELT, pa ripublikim.
-- Rrjetet sociale mblidhen përmes Apify, me rekomandim të FSK-së (`apify_burimi.py`): Reddit me kërkime për kërcënime ndaj Kosovës, dhe kanale publike Telegram nga lista `KANALET_TELEGRAM`. Kushtet e Telegram-it ndalojnë scraping-un dhe përdorimin me AI (https://telegram.org/tos/content-licensing), ndaj përdorimi mbetet vendim i FSK-së.
-- Ruhet vetëm teksti, data dhe URL-ja, pa autorin, përmendjet ose email-et. Buxheti kufizohet në kod: 1 000 postime Reddit dhe 2 000 mesazhe Telegram gjithsej, deri në 200 për ekzekutim.
+- Rrjetet sociale importohen përmes Apify (`apify_burimi.py`). Statusi: Reddit në pritje të lejes; X dhe Telegram të provuar vetëm me të dhëna sintetike. Kushtet e Telegram-it kufizojnë scraping-un dhe përdorimin me AI (https://telegram.org/tos/content-licensing). Shih README, "Rrjetet sociale (Apify)".
+- Ruhet vetëm teksti, gjuha, data dhe URL-ja, pa autorin, përmendjet ose email-et. Buxheti kufizohet në kod: 1 000 postime Reddit, 1 000 X dhe 2 000 mesazhe Telegram gjithsej, deri në 200 për nisje.
 - Burimet sociale marrin Admiralty F dhe mbeten gjithmonë "për verifikim".
 
 **Lista e kanaleve Telegram (`KANALET_TELEGRAM`):** në pritje të miratimit nga ekipi dhe FSK-ja; vetëm media, institucione dhe aktorë shtetërorë, jo individë.

@@ -184,6 +184,11 @@ def kartela(e, skeda):
                  + (f"  ·  **Admiralty:** {kodi}" if kodi else ""))
         if p == "URGJENTE" and raporti.per_verifikim(e):
             st.warning("Për verifikim, jo për veprim: besueshmëria është nën 80% dhe s'ka konfirmim.")
+        sociale = sorted({m.split(":")[0] for m in det.get("mediat") or []
+                          if isinstance(m, str) and m.startswith(scoring.SOCIALE)})
+        if sociale:
+            st.info(f"Sinjal nga rrjetet sociale ({', '.join(sociale)}): për shqyrtim, jo konfirmim. Lidhjet "
+                    "origjinale janë te Burimet; statusi vjen vetëm nga vendimi i analistit.")
         # Lista e 21 kategorive (rreziku.py): kryesorja + shtesat, ndikimi dhe urgjenca
         v21 = det.get("v21") if isinstance(det.get("v21"), dict) else {}
         if v21:

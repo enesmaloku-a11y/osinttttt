@@ -26,7 +26,7 @@ $env:OSINT_DB="demo.db"; python -m streamlit run dashboard.py
 | `OSINT_DB` | `osint.db` | Baza SQLite, p.sh. `demo.db` ose një kopje për prova |
 | `OLLAMA_URL` | `http://localhost:11434/api/generate` | Adresa e Ollama-s |
 | `OLLAMA_MODEL` | `deepseek-r1:8b` | Modeli lokal |
-| `APIFY_TOKEN` | (bosh) | Çelësi i Apify për rrjetet sociale (`apify_burimi.py`); ose skedari `~/.apify_token`. Kurrë në repo. Pa të, mbledhja sociale anashkalohet |
+| `APIFY_TOKEN` | (bosh) | Çelësi i Apify për rrjetet sociale (`apify_burimi.py`); ose skedari `~/.apify_token`. Kurrë në repo. Pa të, importi nga Apify jep "joaktiv"; skedarët lokalë dhe demo punojnë pa të |
 
 ## Baza e të dhënave
 

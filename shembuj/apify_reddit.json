@@ -1,0 +1,30 @@
+[
+  {
+    "type": "post",
+    "url": "https://www.reddit.com/r/kosovo/comments/sintetik01/drone_over_gazivode/",
+    "title": "Drone seen over Gazivode dam near Zubin Potok, Kosovo",
+    "selfText": "Several people report an unidentified drone circling the dam tonight. No official confirmation yet. (Synthetic example written by the team.)",
+    "subreddit": "kosovo",
+    "createdAt": "2026-11-20T21:40:00.000Z",
+    "author": "nuk-ruhet",
+    "_demo": {"in_kosovo": true, "type": "infrastructure_disruption", "summary": "Unconfirmed drone over Gazivode dam near Zubin Potok",
+              "place": "Zubin Potok", "place_precision": "municipality", "kategoria": "dron_hapesire_ajrore",
+              "aktori": "i_panjohur", "shenjestrat": ["infrastrukture_kritike"], "lidhje_me_fsk": false}
+  },
+  {
+    "type": "post",
+    "url": "https://www.reddit.com/r/kosovo/comments/sintetik02/claim_troops_jarinje/",
+    "title": "Claim: Serbian troops crossed the Jarinje crossing into Kosovo",
+    "selfText": "A viral post claims armoured vehicles crossed at Jarinje. No source or photo. (Synthetic example written by the team.)",
+    "subreddit": "kosovo",
+    "createdAt": "2026-11-20T20:05:00.000Z",
+    "_demo": {"in_kosovo": true, "type": "border_incident", "summary": "Unverified claim of Serbian troops crossing at Jarinje",
+              "place": "Jarinje", "place_precision": "village", "kategoria": "ushtarak_serbia",
+              "aktori": "shteti_serb", "shenjestrat": ["fsk"], "lidhje_me_fsk": true}
+  },
+  {
+    "type": "comment",
+    "url": "https://www.reddit.com/r/kosovo/comments/sintetik02/claim_troops_jarinje/koment1/",
+    "body": "Komentet s'merren."
+  }
+]

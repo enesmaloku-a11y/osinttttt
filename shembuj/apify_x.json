@@ -1,0 +1,30 @@
+[
+  {
+    "type": "tweet",
+    "id": "1000000000000000001",
+    "text": "Pretendim: trupa serbe kaluan pikën e Jarinjës në Kosovë, me automjete të blinduara. Pa burim dhe pa foto. (Shembull sintetik i ekipit.)",
+    "createdAt": "Fri Nov 20 20:30:00 +0000 2026",
+    "lang": "sq",
+    "url": "https://x.com/nuk_ruhet/status/1000000000000000001",
+    "_demo": {"in_kosovo": true, "type": "border_incident", "summary": "Unverified claim of Serbian troops crossing at Jarinje",
+              "place": "Jarinje", "place_precision": "village", "kategoria": "ushtarak_serbia",
+              "aktori": "shteti_serb", "shenjestrat": ["fsk"], "lidhje_me_fsk": true}
+  },
+  {
+    "type": "tweet",
+    "id": "1000000000000000002",
+    "text": "Lažna vest se širi: navodno KBS napada Srbe na severu Kosova. Policija demantuje. (Sintetički primer tima.)",
+    "createdAt": "Fri Nov 20 18:10:00 +0000 2026",
+    "lang": "sr",
+    "url": "https://x.com/nuk_ruhet/status/1000000000000000002",
+    "_demo": {"in_kosovo": true, "type": "disinformation", "summary": "False claim that the KSF attacks Serbs in north Kosovo",
+              "place": "veri", "place_precision": "region", "kategoria": "dezinformim",
+              "aktori": "media_propagandistike", "shenjestrat": ["fsk", "shoqeri"], "lidhje_me_fsk": true}
+  },
+  {
+    "type": "tweet",
+    "id": "1000000000000000003",
+    "text": "Tweet pa datë publikimi: refuzohet në import, data s'shpiket. Kosovo.",
+    "url": "https://x.com/nuk_ruhet/status/1000000000000000003"
+  }
+]

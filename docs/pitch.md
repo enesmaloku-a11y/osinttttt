@@ -27,7 +27,7 @@
 ## Burimet dhe ligji (thuaje me një fjali, dhe përgjigju nëse pyesin)
 
 - **Çfarë mbledhim:** media publike (RSS), GDELT, burime zyrtare dhe **postime publike nga rrjetet sociale**. Te mediat respektohet `robots.txt`, ruhet vetëm fragmenti dhe URL-ja, emrat e personave maskohen, dhe modeli punon lokalisht, pa cloud.
-- **Rrjetet sociale (live, përmes Apify):** Reddit dhe X, me kërkime për kërcënime ndaj Kosovës. Ruhet vetëm teksti, data dhe URL-ja, pa autorin, përmendjet ose email-et. Kufiri i buxhetit është në kod (200 postime dhe $0.30 për ekzekutim). Çdo postim social merr Admiralty **F** dhe mbetet gjithmonë "për verifikim": sinjal i hershëm, jo konfirmim.
+- **Rrjetet sociale (përmes Apify):** integrimi është gati për Reddit, X dhe Telegram: import nga dataset ekzistues, ruajtje pa autorin, Admiralty **F**, "për verifikim", dhe dy platforma me të njëjtin pretendim = një origjinë. **Statusi sot:** Reddit në pritje të lejes; X dhe Telegram të provuar vetëm me të dhëna sintetike. Në demo tregojmë shembuj sintetikë të ekipit dhe e themi qartë.
 - **Telegram:** vetëm kanale publike të mediave, institucioneve dhe aktorëve shtetërorë, nga një listë që e miraton ekipi me FSK-në. Lista është ende bosh, ndaj sot nuk mblidhet asgjë nga Telegram. Kushtet e Telegram-it e kufizojnë scraping-un dhe përdorimin për AI, ndaj përdorimi operacional është vendim ligjor i FSK-së.
 - **Demo live:** përdor **kanalin privat të ekipit** ose forumin demo, me postime që i shkruan ekipi, përmes Bot API-t zyrtar, pa model dhe pa trajnim.
 - **Facebook dhe Instagram:** nuk mblidhen.
@@ -47,7 +47,7 @@
 | Si e dini që 85% do të thotë 85%? | Modeli kalibrohet nga vendimet e analistit dhe matet me validim të kryqëzuar. Përdoret vetëm nëse i kalon rregullat. Deri sa të ketë mjaft etiketa (80+), besueshmëria vjen nga rregulla të qarta, dhe e themi hapur. |
 | Pse s'e vendos LLM-i besueshmërinë? | Modelet gjuhësore e japin keq sigurinë e tyre. Ne e llogarisim nga provat që mund t'i kontrolloni. |
 | Po nëse një lajm ripostohet 10 herë? | Kopjet dhe përkthimet grupohen sipas origjinës (ngjashmëri teksti, përkthimi ose citim i qartë). Në testin tonë, Koha + ripostimi + përkthimi mbeti 54%, jo 91%, dhe Admiralty doli B6, jo B1. Kanalet sociale numërohen gjithsej si një burim. |
-| A mblidhni nga rrjetet sociale? | Po, postime publike nga Reddit dhe X përmes Apify, vetëm ato që përmendin Kosovën, pa autorin dhe me kufi buxheti. Marrin gjithmonë Admiralty F, pra janë sinjal për verifikim dhe jo konfirmim. Telegram vetëm për kanale publike institucionale të miratuara (lista ende bosh). Facebook dhe Instagram nuk mblidhen. |
+| A mblidhni nga rrjetet sociale? | Integrimi me Apify është gati (Reddit, X, Telegram), por përmbajtja reale hyn vetëm kur marrëveshja e platformës e lejon këtë përdorim. Sot: Reddit në pritje të lejes, X dhe Telegram vetëm me të dhëna sintetike. Postimet sociale marrin gjithmonë Admiralty F: sinjal për verifikim, jo konfirmim. Facebook dhe Instagram nuk mblidhen. |
 | A profiloni njerëz? | Jo. Ndiqen organizata, media dhe aktorë shtetërorë. Emrat e personave privatë maskohen me rregulla, dhe ruhet vetëm fragmenti dhe URL-ja. |
 | Pse Admiralty? | Është standardi i NATO-s: shkronja (A–F) për burimin, numri (1–6) për informacionin. Burimet e hapura s'marrin kurrë "A" automatikisht. |
 | A funksionon me lajme reale? | Po, pipeline-i mbledh nga mediat reale. Metrikat e sakta janë mbi të dhëna sintetike, dhe për to e themi qartë. |
