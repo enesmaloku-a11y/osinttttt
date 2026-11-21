@@ -28,7 +28,7 @@ def lexo(sql):
         return pd.read_sql(sql, con)
 
 
-artikujt = lexo("SELECT id, url, burimi, titulli, data, gjuha, teksti, teksti_perkthyer, "
+artikujt = lexo("SELECT id, url, burimi, titulli, data, gjuha, teksti, raw_text, teksti_perkthyer, "
                 "perpunuar, hash_sha256, mbledhur_me FROM articles")
 ngjarjet = lexo("SELECT * FROM events")
 vendimet = db.vendimet()
@@ -226,8 +226,8 @@ with tab_art:
             h.caption(f"Hash SHA-256: `{a['hash_sha256'][:12]}…` · mbledhur më {a['mbledhur_me']} UTC")
             if b.button("Verifiko tani", key=f"vf_{id_zgjedhur}"):
                 with st.spinner("Po shkarkohet faqja..."):
-                    # Teksti është ende bruto vetëm nëse processor.py s'e ka pastruar/përkthyer
-                    bruto = a["teksti"] if not isinstance(a["teksti_perkthyer"], str) else None
+                    # raw_text = teksti siç u mblodh (processor.py s'e prek); NaN te bazat e vjetra
+                    bruto = a["raw_text"] if isinstance(a["raw_text"], str) else None
                     b.write(collector.verifiko(a["url"], a["hash_sha256"], bruto))
         else:
             st.caption("Pa hash: artikulli u përpunua para se të shtohej hash-i.")

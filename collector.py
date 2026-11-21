@@ -1,9 +1,16 @@
 """collector.py - Mbledh artikuj nga RSS dhe GDELT dhe i ruan në SQLite pa dublikatë."""
 import hashlib
+import os
 import re
+import sys
 import time
+import urllib.error
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from functools import lru_cache
+from urllib.parse import urlsplit
+from urllib.robotparser import RobotFileParser
 
 import feedparser
 import trafilatura
@@ -25,7 +32,12 @@ FEEDS = {
 }
 
 AGENT = "Mozilla/5.0 (osint-prototype)"
+ROBOT = "osint-prototype"  # emri që kërkohet te "User-agent:" në robots.txt
 PUNETORE = 8  # sa shkarkime paralele
+# Ruhet vetëm fragmenti i fillimit (paragrafë të plotë) + URL; teksti i plotë vetëm me OSINT_FULL_TEXT=1.
+# Ngjarja zakonisht është në paragrafët e parë; extractor.py lexon deri në 2500 karaktere.
+MAKS_FRAGMENTI = 1200
+TEKST_I_PLOTE = os.environ.get("OSINT_FULL_TEXT") == "1"
 
 
 def zbulo_gjuhen(teksti):
@@ -49,6 +61,49 @@ def pastro_html(s):
     return re.sub(r"<[^>]+>", " ", s or "").strip()
 
 
+def lexo_robots(statusi, rreshtat=()):
+    """Rregullat sipas RFC 9309: 2xx = lexo skedarin; 4xx = s'ka rregulla (lejohet gjithçka);
+    5xx ose server i paarritshëm (statusi None) = ndalohet gjithçka."""
+    rp = RobotFileParser()
+    if statusi is not None and 200 <= statusi < 300:
+        rp.parse(rreshtat)
+    elif statusi is not None and 400 <= statusi < 500:
+        rp.allow_all = True
+    else:
+        rp.disallow_all = True
+    return rp
+
+
+@lru_cache(maxsize=None)
+def _robots(baza):
+    """robots.txt i një host-i, një herë për ekzekutim."""
+    req = urllib.request.Request(f"{baza}/robots.txt", headers={"User-Agent": AGENT})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return lexo_robots(r.status, r.read().decode("utf-8", "ignore").splitlines())
+    except urllib.error.HTTPError as e:
+        return lexo_robots(e.code)
+    except Exception:
+        return lexo_robots(None)
+
+
+def lejohet(url):
+    """True nëse robots.txt e lejon shkarkimin e faqes."""
+    u = urlsplit(url)
+    return _robots(f"{u.scheme}://{u.netloc}").can_fetch(ROBOT, url)
+
+
+def fragment(teksti, maks=MAKS_FRAGMENTI):
+    """Paragrafët e parë deri në 'maks' karaktere (i pari pritet te fjala, nëse është më i gjatë)."""
+    dalja = ""
+    for p in (teksti or "").split("\n"):
+        if dalja and len(dalja) + len(p) + 1 > maks:
+            break
+        dalja += p + "\n"
+    dalja = dalja.strip()
+    return dalja if len(dalja) <= maks else dalja[:maks].rsplit(" ", 1)[0]
+
+
 def nxirr_tekstin(url):
     """Shkarkon faqen dhe nxjerr vetëm tekstin kryesor (pa komente)."""
     try:
@@ -69,6 +124,8 @@ def verifiko(url, hash_i_ruajtur, teksti_bruto=None):
     """Rishkarkon faqen dhe e krahason me hash-in e ruajtur kur u mblodh.
     Faqet shtojnë shpesh reklama/"më të lexuarat", ndaj hash-i ndryshon edhe kur lajmi s'ka
     ndryshuar. Nëse kemi ende tekstin bruto, tregojmë sa rreshta të lajmit mungojnë."""
+    if not lejohet(url):
+        return "s'u kontrollua (robots.txt e ndalon)"
     teksti = nxirr_tekstin(url)
     if not teksti:
         return "s'u arrit (fshirë ose offline)"
@@ -84,14 +141,15 @@ def verifiko(url, hash_i_ruajtur, teksti_bruto=None):
 
 
 def pergatit(burimi, url, titulli, data, permbledhja=""):
-    """Merr tekstin e plotë dhe gjuhën; kthen dict gati për db (ose None)."""
-    teksti = nxirr_tekstin(url) or pastro_html(permbledhja)
+    """Merr tekstin dhe gjuhën; kthen dict gati për db (ose None).
+    Faqja shkarkohet vetëm nëse robots.txt e lejon; përndryshe mbetet përmbledhja e RSS-së."""
+    teksti = (nxirr_tekstin(url) if lejohet(url) else "") or pastro_html(permbledhja)
     if not teksti:
         return None
-    # Hash-i merret mbi tekstin bruto, para se processor.py ta pastrojë/presë
+    # Gjuha dhe hash-i nga teksti i plotë, para se të pritet në fragment
     return dict(url=url, burimi=burimi, titulli=titulli, data=data,
-                gjuha=zbulo_gjuhen(f"{titulli}\n{teksti}"), teksti=teksti,
-                hash_sha256=gjurma(teksti))
+                gjuha=zbulo_gjuhen(f"{titulli}\n{teksti}"),
+                teksti=teksti if TEKST_I_PLOTE else fragment(teksti), hash_sha256=gjurma(teksti))
 
 
 def ruaj_te_gjitha(detyrat):
@@ -168,7 +226,25 @@ def mblidh_te_gjitha():
     return rezultati
 
 
-if __name__ == "__main__":
+def kontrollet():
+    """Kontrolle pa rrjet: robots.txt dhe fragmenti."""
+    rp = lexo_robots(200, ["User-agent: *", "Disallow: /private/",
+                           "User-agent: osint-prototype", "Disallow: /lajme/sekret"])
+    assert rp.can_fetch(ROBOT, "https://x.com/lajme/1")
+    assert not rp.can_fetch(ROBOT, "https://x.com/lajme/sekret-2")
+    assert lexo_robots(404).can_fetch(ROBOT, "https://x.com/a")       # pa robots.txt = lejohet
+    assert not lexo_robots(503).can_fetch(ROBOT, "https://x.com/a")   # server i rënë = ndalohet
+    assert not lexo_robots(None).can_fetch(ROBOT, "https://x.com/a")  # i paarritshëm = ndalohet
+    t = "Paragrafi i parë.\nI dyti.\n" + "x " * 1000
+    assert fragment(t) == "Paragrafi i parë.\nI dyti."  # paragraf i plotë, pa gjysma
+    assert len(fragment("fjale " * 500)) <= MAKS_FRAGMENTI
+    assert fragment("") == "" and fragment("i shkurtër") == "i shkurtër"
+    print("Kontrollet e collector.py kaluan.")
+
+
+if __name__ == "__main__" and "--kontrollo" in sys.argv:
+    kontrollet()
+elif __name__ == "__main__":
     print("Mbledhja filloi...")
     te_reja = mblidh_te_gjitha()
     print("\nArtikuj të rinj në këtë ekzekutim:")

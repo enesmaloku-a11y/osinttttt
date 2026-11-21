@@ -80,7 +80,9 @@ Skripti kalon të njëjtin pipeline në bazë të veçantë (`eval/eval.db`) dhe
 
 ## Të dhënat dhe privatësia
 
-- Vetëm burime publike. `osint.db` ka tekstin e plotë të artikujve, prandaj nuk publikohet (është te `.gitignore`).
+- Vetëm burime publike. `collector.py` respekton `robots.txt` (RFC 9309): kur faqja e ndalon, s'shkarkohet dhe ruhet vetëm përmbledhja e RSS-së. Balkan Insight, p.sh., i ndalon të gjithë robotët e paemërtuar.
+- Si parazgjedhje ruhet vetëm fragmenti i fillimit të artikullit (~1200 karaktere, paragrafë të plotë) + URL; teksti i plotë vetëm me `OSINT_FULL_TEXT=1`. Hash-i merret mbi tekstin e plotë kur mblidhet. Kolona `raw_text` mban tekstin siç u mblodh; `processor.py` pastron vetëm `teksti`.
+- `osint.db` ka tekst nga artikujt dhe emra në të, prandaj nuk publikohet (është te `.gitignore`).
 - Email-et, numrat e telefonit dhe emrat e personave privatë hiqen me rregulla, jo duke i besuar modelit.
 - Çdo ngjarje duhet të ketë të paktën një URL burimi.
 
@@ -90,4 +92,4 @@ Skripti kalon të njëjtin pipeline në bazë të veçantë (`eval/eval.db`) dhe
 - Besueshmëria e mediave te `scoring.py` është vlerë fillestare që duhet ta rishikojë analisti.
 - Numrat e vlerësimit vijnë nga të dhëna sintetike; me lajme reale pritet të jenë më të ulët.
 - `patterns.py` jep alarme vetëm pas 5 javësh mbledhjeje (para kësaj mesatarja s'dihet); deri atëherë dashboard-i e thotë këtë.
-- Hash-i ndryshon edhe kur portali shton vetëm reklama; krahasimi rresht për rresht bëhet vetëm për artikujt ende të papërkthyer (processor.py e pastron tekstin).
+- Hash-i ndryshon edhe kur portali shton vetëm reklama; krahasimi rresht për rresht bëhet mbi `raw_text` (fragmentin, si parazgjedhje), ndaj artikujt e mbledhur para kësaj kolone e kanë vetëm nëse s'ishin përkthyer.

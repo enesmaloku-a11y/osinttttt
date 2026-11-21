@@ -21,6 +21,7 @@ KONTROLLET = [
     ("scoring.py", ["scoring.py"]),
     ("patterns.py", ["patterns.py"]),
     ("vektori.py", ["vektori.py"]),
+    ("collector.py", ["collector.py", "--kontrollo"]),
     ("kontekst_dezinformim.py", ["kontekst_dezinformim.py"]),
     ("kontekst_kibernetik.py", ["-c", "import kontekst_kibernetik as k; k.kontrollet()"]),
     ("eval/evaluate.py", ["-c", "import sys; sys.path.insert(0, 'eval'); import evaluate as e; "
