@@ -74,6 +74,8 @@ Tema e errët e dashboard-it vjen nga `.streamlit/config.toml` (lexohet kur `str
 Në cloud (Linux, ose lokalisht me `OSINT_CLOUD=1`) pa `OSINT_DB`, dashboard-i krijon një bazë të përkohshme nga 63 artikujt **sintetikë** të `eval/gold.jsonl`. Demoja shfaqet vetëm për lexim dhe çaktivizon ekzekutimin e pipeline-it dhe orarin.
 Në cloud me `OSINT_DB` të caktuar, dashboard-i paraqet bazën e konfiguruar. Në Railway, pa `OSINT_DB` nis vetëm demoja. Me `OSINT_DB`, `railway-start.sh` nis edhe punëtorin mbi të njëjtën bazë; intervali është `OSINT_INTERVAL` sekonda (3600 si parazgjedhje). Me `OSINT_RUN_AI=1` kontrollo edhe disponueshmërinë e modelit Ollama. Përndryshe punëtori vetëm mbledh artikuj.
 
+Në Railway vendos **Start Command** = `sh railway-start.sh` dhe lëre **Pre-deploy Command** bosh. Skripti është proces i vazhdueshëm, ndaj si hap para nisjes bllokon publikimin. Për këtë version përdor `OSINT_CLOUD=1` dhe cakto `OSINT_DB` te baza e punës; demoja nuk shkruan mbi të. Për ruajtje ndërmjet publikimeve, baza duhet të ndodhet në një volume të qëndrueshëm. Versioni i vjetër `e7ab3eb` kërkon përkohësisht `OSINT_CLOUD=0` kur përdoret baza reale; ky përjashtim s'nevojitet pasi bashkohet korrigjimi i PR #44.
+
 1. Te share.streamlit.io: **Create app**, repo `enesmaloku-a11y/osinttttt`, dega `main`, skedari `dashboard.py`. Te **Advanced settings** zgjidh Python 3.12.
 2. Mos vendos `OSINT_DB`, `APIFY_TOKEN` apo `osint.db` në cloud: aty shkon vetëm demo-ja.
 3. Te **Settings → Sharing**, lejo vetëm email-et e ekipit dhe të jurisë.

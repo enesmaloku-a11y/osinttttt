@@ -41,6 +41,21 @@ KONTROLLET = [
     ("dashboard.py", ["-c", "from streamlit.testing.v1 import AppTest; "
                          "at = AppTest.from_file('dashboard.py', default_timeout=90).run(); "
                          "assert not at.exception, [x.value for x in at.exception]"]),
+    # Railway: edhe me CLOUD=1, baza e konfiguruar s'duhet kaluar te demo.gjenero.
+    ("dashboard.py (cloud me baze reale)", ["-c", "import os, tempfile, sqlite3; from pathlib import Path; "
+                         "import db, demo; from streamlit.testing.v1 import AppTest; "
+                         "tmp = tempfile.TemporaryDirectory(); "
+                         "p = Path(tmp.name) / 'osint.db'; os.environ['OSINT_DB'] = str(p); "
+                         "os.environ['OSINT_CLOUD'] = '1'; db.DB_PATH = str(p); "
+                         "demo.gjenero = lambda *a: (_ for _ in ()).throw(AssertionError('demo mbi baze reale')); "
+                         "at = AppTest.from_file('dashboard.py', default_timeout=90).run(); "
+                         "assert not at.exception, [x.value for x in at.exception]; "
+                         "assert Path(db.DB_PATH) == p and not db.ngjarjet(); "
+                         "c = sqlite3.connect(p); c.execute('CREATE TABLE ruajtja (v TEXT)'); "
+                         "c.execute(\"INSERT INTO ruajtja VALUES ('ruaje')\"); c.commit(); c.close(); "
+                         "at.run(); assert not at.exception, [x.value for x in at.exception]; "
+                         "c = sqlite3.connect(p); assert c.execute('SELECT v FROM ruajtja').fetchone()[0] == 'ruaje'; "
+                         "c.close(); tmp.cleanup()"]),
     # Cloud pa OSINT_DB merr një demo të përkohshme vetëm për lexim.
     ("dashboard.py (cloud)", ["-c", "import os, db; from pathlib import Path; "
                                    "os.environ.pop('OSINT_DB'); os.environ['OSINT_CLOUD'] = '1'; "
