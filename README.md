@@ -29,7 +29,24 @@ pip install -r requirements.txt
 ollama pull deepseek-r1:8b
 ```
 
-Modeli ndryshohet te `MODELI` në `processor.py`.
+Linux/macOS:
+
+```bash
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+ollama pull deepseek-r1:8b
+```
+
+Modeli ndryshohet me `OLLAMA_MODEL` (ose te `MODELI` në `processor.py`); shih `.env.example` për variablat e tjera.
+
+## Demo pa Ollama (rezervë për prezantimin)
+
+```bash
+python demo.py                                   # krijon demo.db nga eval/gold.jsonl
+OSINT_DB=demo.db streamlit run dashboard.py      # PowerShell: $env:OSINT_DB="demo.db"; streamlit run dashboard.py
+```
+
+`demo.db` ka 36 artikujt **sintetikë** të gold set-it, me etiketat e sakta në vend të përgjigjes së modelit, ndaj tregon vetëm pamjen e analistit (bashkimi, besueshmëria, boshllëqet, harta), jo saktësinë. `osint.db` nuk preket.
 
 ## Përdorimi
 
@@ -42,7 +59,7 @@ streamlit run dashboard.py
 
 Artikujt që s'arrihen në një ekzekutim përpunohen herën tjetër, sepse rezultatet ruhen në `osint.db`. Çdo hap mund të niset edhe veçmas, p.sh. `python collector.py` ose `python extractor.py 10`.
 
-**Nga dashboard-i (skeda "Ekzekutimi"):** butoni **▶️ Ekzekuto tani** nis `ekzekuto.py` në sfond (log-u te `pipeline.log`, dy ekzekutime njëkohësisht nuk lejohen). Te **Automatikisht** zgjidhet çdo 1/2/3/6/12/24 orë: krijohet detyra "OSINT Kosova" në Windows Task Scheduler, që punon edhe kur dashboard-i është i mbyllur (kompjuteri ndezur dhe Ollama duke punuar).
+**Nga dashboard-i (skeda "Ekzekutimi"):** butoni **▶️ Ekzekuto tani** nis `ekzekuto.py` në sfond (log-u te `pipeline.log`, dy ekzekutime njëkohësisht nuk lejohen). Te **Automatikisht** zgjidhet çdo 1/2/3/6/12/24 orë: krijohet detyra "OSINT Kosova" në Windows Task Scheduler, që punon edhe kur dashboard-i është i mbyllur (kompjuteri ndezur dhe Ollama duke punuar). Në Linux/macOS butoni "Ekzekuto tani" punon, por orari bëhet me cron, p.sh. `0 */3 * * * cd /rruga/osint && venv/bin/python ekzekuto.py 20`.
 
 ## Mjetet për analistin
 
@@ -69,8 +86,7 @@ Skripti kalon të njëjtin pipeline në bazë të veçantë (`eval/eval.db`) dhe
 
 ## Kufizime të njohura
 
-- Ngjarjet jashtë Kosovës zbulohen, por nuk shfaqen në dashboard.
-- Emrat e vendeve në cirilik nuk njihen për hartën.
+- Ngjarjet jashtë Kosovës njihen vetëm për qytetet kryesore fqinje (`RAJONI` te `correlator.py`).
 - Besueshmëria e mediave te `scoring.py` është vlerë fillestare që duhet ta rishikojë analisti.
 - Numrat e vlerësimit vijnë nga të dhëna sintetike; me lajme reale pritet të jenë më të ulët.
 - `patterns.py` jep alarme vetëm pas 5 javësh mbledhjeje (para kësaj mesatarja s'dihet); deri atëherë dashboard-i e thotë këtë.
