@@ -87,8 +87,12 @@ db.lidhu().close()
 # Vendimet lexohen pa cache, që një vendim i ruajtur të shfaqet menjëherë
 te_gjitha = raporti.ngjarjet()
 
-IKONAT = {"e konfirmuar": "✅", "e pakonfirmuar": "❓", "e hedhur poshtë": "❌"}
-SHENJA = {"URGJENTE": "🔴", "RAPORT": "🟠", "MONITORIM": "🔵", "ARKIV": "⚪", None: "▫️"}
+IKONAT = {"e konfirmuar": ":material/check_circle:", "e pakonfirmuar": ":material/help:",
+          "e hedhur poshtë": ":material/cancel:"}
+SHENJA = {"URGJENTE": "🔴", "RAPORT": "🟠", "MONITORIM": "🔵", "ARKIV": "⚪", None: "▫️"}  # për tabelat
+# Rreziku dhe prioriteti shënohen dy herë, me ngjyrë dhe me tekst, që të lexohen edhe pa ngjyra
+NGJYRA_P = {"URGJENTE": "red", "RAPORT": "orange", "MONITORIM": "blue", "ARKIV": "gray"}
+NGJYRA_R = {"i lartë": "red", "i mesëm": "orange", "i ulët": "green"}
 NGJYRA_HARTE = {"URGJENTE": "red", "RAPORT": "orange", "MONITORIM": "blue", "ARKIV": "gray", None: "lightgray"}
 SAKTESIA = {"village": "fshat", "municipality": "komunë", "region": "vetëm rajon",
             "exact": "e saktë", "approximate": "e përafërt", None: "e panjohur"}
@@ -142,14 +146,14 @@ if CLOUD:
     st.sidebar.info("Demo në cloud: ekzekutimi dhe orari punojnë vetëm në laptopin me Ollama.")
 elif ngrire:
     st.sidebar.warning("Etiketim në vazhdim: pipeline-i është i ngrirë. Ekzekutimi dhe orari janë çaktivizuar.")
-if st.sidebar.button("▶️ Ekzekuto tani", type="primary", key="ekz_sidebar", use_container_width=True,
+if st.sidebar.button("Ekzekuto tani", type="primary", key="ekz_sidebar", width="stretch", icon=":material/play_arrow:",
                      disabled=ngrire):
     if ekzekuto.po_punon():
         st.sidebar.warning("Një ekzekutim po punon tashmë.")
     else:
         ekzekuto.nis_ne_sfond(20)
         st.sidebar.success("U nis në sfond (20 artikuj).")
-st.sidebar.caption("⏳ Po punon tani…" if ekzekuto.po_punon() else
+st.sidebar.caption(":material/hourglass_top: Po punon tani…" if ekzekuto.po_punon() else
                    "Orari dhe log-u: skeda 'Ekzekutimi'.")
 
 st.sidebar.header("Filtrat e ngjarjeve")
@@ -201,10 +205,17 @@ def kartela(e, skeda):
     det, p = e["det"], raporti.prioriteti(e)
     pike, niveli, arsyet = raporti.rreziku(e)
     b = raporti.besueshmeria(e)
-    koka = (f"{IKONAT[e['statusi']]} {SHENJA[p]} {koha_e(e)} · {raporti.pastro(e['titulli'], 120)}"
-            f" · rreziku {pike if pike is not None else '–'} · besueshmëria {perqind(b)}")
-    with st.expander(koka):
-        kodi = raporti.admiralty(e)
+    kodi = raporti.admiralty(e)
+    n = det.get("burime_te_pavarura")
+    n = n if type(n) is int and n >= 0 else len(det.get("mediat") or [])
+    burime = ":orange-badge[1 burim i vetëm]" if n == 1 else f":green-badge[{n} origjina]" if n > 1 else ""
+    # Titulli kalon nga pastro(), që i bën [ ] tekst: një titull s'mund të krijojë shenja të rreme
+    koka = (f":{NGJYRA_P.get(p, 'gray')}-badge[{p or 'pa prioritet'}] {koha_e(e)} · "
+            f"{raporti.pastro(e['titulli'], 120)} "
+            f":{NGJYRA_R.get(niveli, 'gray')}-badge[Rreziku {pike if pike is not None else '–'}] "
+            f":gray-badge[Besueshmëria {perqind(b)}]" + (f" :gray-badge[{kodi}]" if kodi else "")
+            + f" {burime}")
+    with st.expander(koka, icon=IKONAT[e["statusi"]]):
         st.write(f"**Prioriteti:** {p or 'i pallogaritur'}  ·  **Rreziku:** "
                  f"{f'{pike}/100 ({niveli})' if pike is not None else '–'}  ·  **Besueshmëria:** {perqind(b)}"
                  + (f"  ·  **Admiralty:** {kodi}" if kodi else ""))
@@ -405,11 +416,13 @@ def tabela_zonave(ngjarjet):
 st.title("OSINT Kosova: kërcënimet hibride")
 st.caption("Sistemi vetëm sugjeron. Çdo vendim e merr analisti.")
 
-k1, k2, k3, k4 = st.columns(4)
-k1.metric("Urgjente", len(urgjente))
-k2.metric("Raporte", len(raporte))
-k3.metric("Ngjarje", len(ngj))
-k4.metric("Artikuj", len(f))
+with st.container(horizontal=True):
+    st.metric("Urgjente", len(urgjente), border=True, help="Rrezik i lartë: për veprim ose për verifikim")
+    st.metric("Prej tyre për verifikim", sum(map(raporti.per_verifikim, urgjente)), border=True,
+              help="Besueshmëria nën 80% dhe pa konfirmim të analistit")
+    st.metric("Raporte", len(raporte), border=True, help="RAPORT + MONITORIM")
+    st.metric("Ngjarje", len(ngj), border=True)
+    st.metric("Artikuj", len(f), border=True)
 
 (tab_per, tab_urg, tab_rap, tab_ngj, tab_ker, tab_bur, tab_vle,
  tab_art, tab_ekz) = st.tabs(["Përmbledhja", "Urgjente", "Raporte", "Ngjarjet", "Kërcënimet", "Burimet",
@@ -462,12 +475,12 @@ with tab_urg:
         st.success("S'ka ngjarje urgjente me këto filtra.")
 
     st.subheader("Raporti ditor")
-    if st.button("📝 Gjenero raportin ditor"):
+    if st.button("Gjenero raportin ditor", icon=":material/description:"):
         st.session_state["raporti"] = str(raporti.gjenero())
     if st.session_state.get("raporti") and Path(st.session_state["raporti"]).exists():
         shtegu = Path(st.session_state["raporti"])
         teksti = shtegu.read_text(encoding="utf-8")
-        st.download_button("⬇️ Shkarko raportin", teksti, file_name=shtegu.name, mime="text/markdown")
+        st.download_button("Shkarko raportin", teksti, icon=":material/download:", file_name=shtegu.name, mime="text/markdown")
         with st.expander("Shiko raportin", expanded=True):
             st.markdown(teksti)
 
@@ -477,7 +490,7 @@ with tab_rap:
                "Ngjarjet ARKIV dhe ato të hedhura poshtë janë vetëm te 'Ngjarjet'.")
     for emri_p in ("RAPORT", "MONITORIM"):
         grupi = [e for e in raporte if raporti.prioriteti(e) == emri_p]
-        st.subheader(f"{SHENJA[emri_p]} {emri_p} ({len(grupi)})")
+        st.subheader(f":{NGJYRA_P[emri_p]}-badge[{emri_p}] ({len(grupi)})")
         for e in grupi:
             kartela(e, f"rap_{emri_p}")
         if not grupi:
@@ -489,7 +502,7 @@ with tab_ngj:
     fillimi = db.fillimi_i_mbledhjes()
     alarmet = patterns.rritjet(aktive, fillimi_mbledhjes=fillimi)
     for a in alarmet:
-        st.warning("⚠️ " + patterns.pershkrim(a))
+        st.warning(patterns.pershkrim(a), icon=":material/warning:")
     if fillimi and ngj and not patterns.histori_e_mjaftueshme(fillimi, max(str(e["data"]) for e in ngj)):
         st.caption(f"Alarmet për rritje aktivizohen pas 5 javë mbledhjeje "
                    f"(mbledhja filloi më {str(fillimi)[:10]}).")
@@ -557,7 +570,7 @@ with tab_ngj:
                      alt.Tooltip("prioriteti:N", title="Prioriteti"), alt.Tooltip("rreziku:Q", title="Rreziku"),
                      alt.Tooltip("besueshmeria:N", title="Besueshmëria"), alt.Tooltip("burime:Q", title="Burime")],
         )
-        st.altair_chart(grafiku, use_container_width=True)
+        st.altair_chart(grafiku, width="stretch")
         st.caption("Çdo pikë është një ngjarje. Madhësia tregon numrin e burimeve.")
 
         st.subheader(f"Të gjitha ngjarjet ({len(ngj)})")
@@ -572,7 +585,7 @@ with tab_ker:
     st.dataframe(pd.DataFrame([{
         "Kategoria": c["emri"], "Rrezikshmëria bazë": c["rrezikshmeria_baze"],
         "Ngjarje tani": numri.get(i, 0), "Përshkrimi": c["pershkrimi"]}
-        for i, c in kercenimet.KATEGORITE.items()]), hide_index=True, use_container_width=True)
+        for i, c in kercenimet.KATEGORITE.items()]), hide_index=True, width="stretch")
     for i, c in kercenimet.KATEGORITE.items():
         if i == "tjeter":
             continue
@@ -606,7 +619,7 @@ with tab_bur:
         r["Besueshmëria e mediumit"] = besueshmeria_e(r["Burimi"])
     if rreshtat:
         st.dataframe(pd.DataFrame(sorted(rreshtat.values(), key=lambda r: -r["Ngjarje"])),
-                     hide_index=True, use_container_width=True,
+                     hide_index=True, width="stretch",
                      column_config={"Besueshmëria e mediumit": st.column_config.NumberColumn(format="%.2f")})
     else:
         st.caption("S'ka ende ngjarje.")
@@ -616,7 +629,7 @@ with tab_bur:
     if dez:
         st.caption("Sipas rasteve të EUvsDisinfo për Kosovën dhe rajonin. Kanalet në rrjete sociale grupohen "
                    "sipas platformës, pa emra llogarish.")
-        st.dataframe(pd.DataFrame(dez), hide_index=True, use_container_width=True,
+        st.dataframe(pd.DataFrame(dez), hide_index=True, width="stretch",
                      column_config={"url_shembull": st.column_config.LinkColumn("Rasti i fundit")})
     else:
         st.info("Lista mungon: vendos eksportin CSV te data/euvsdisinfo.csv (shih kontekst_dezinformim.py).")
@@ -683,7 +696,7 @@ with tab_art:
         .assign(data=lambda x: x["data"].dt.tz_convert("Europe/Belgrade")),  # ora e Kosovës
         column_config={"url": st.column_config.LinkColumn("URL"),
                        "data": st.column_config.DatetimeColumn("Data", format="YYYY-MM-DD HH:mm")},
-        hide_index=True, use_container_width=True, height=400,
+        hide_index=True, width="stretch", height=400,
     )
 
     # Leximi i një artikulli: origjinali dhe përkthimi krah për krah
@@ -719,8 +732,8 @@ with tab_ekz:
                         help="Më shumë artikuj = më shumë kohë (rreth 1 minutë për artikull me modelin aktual).")
     # Butoni është gjithmonë aktiv; bllokimi te ekzekuto.py s'lejon dy ekzekutime njëkohësisht
     if ekzekuto.po_punon():
-        st.info("⏳ Pipeline-i po punon tani. Shiko log-un më poshtë; kur të mbarojë, kliko 'Rifresko të dhënat'.")
-    if st.button("▶️ Ekzekuto tani", type="primary", disabled=ngrire):
+        st.info(icon=":material/hourglass_top:", body="Pipeline-i po punon tani. Shiko log-un më poshtë; kur të mbarojë, kliko 'Rifresko të dhënat'.")
+    if st.button("Ekzekuto tani", type="primary", disabled=ngrire, icon=":material/play_arrow:"):
         if ekzekuto.po_punon():
             st.warning("Një ekzekutim po punon tashmë. Prit sa të mbarojë, pastaj provo sërish.")
         else:
@@ -747,6 +760,6 @@ with tab_ekz:
 
     st.subheader("Log-u i fundit")
     st.code(ekzekuto.log_fundit(25), language=None)
-    if st.button("🔄 Rifresko të dhënat"):
+    if st.button("Rifresko të dhënat", icon=":material/refresh:"):
         st.cache_data.clear()
         st.rerun()
