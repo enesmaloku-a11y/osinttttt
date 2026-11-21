@@ -41,11 +41,13 @@ FEEDS = {
     "KoSSev": "https://kossev.info/feed/",
     "Novosti": "https://novosti.rs/rss/vesti",
     "Danas": "https://www.danas.rs/feed/",
-    # Shërbimi "Srbija" nga faqja zyrtare e RSS-ve: slobodnaevropa.org/rssfeeds.
-    "RSE": "https://www.slobodnaevropa.org/api/zototl-vomx-tpepomq",
+    # Shërbimi "Kosovo" nga slobodnaevropa.org/rssfeeds. Më 2026-11-21: 15 nga 20 hyrje kalonin
+    # filtrin, kundrejt 3 nga 20 te "Srbija" (api/zototl-vomx-tpepomq).
+    "RSE": "https://www.slobodnaevropa.org/api/zmtoil-vomx-tpeyomp",
     # Feed-i kryesor i lidhur nga faqja zyrtare informer.rs/rss.
     "Informer": "https://informer.rs/rss/najnovije-vesti",
-    # MO Srbije: nuk u gjet RSS në faqen zyrtare ose shtigjet e zakonshme.
+    # RSS 2.0 i vërtetuar më 2026-11-21: 20 hyrje, të gjitha në mod.gov.rs, robots.txt e lejon.
+    "MO Srbije": "https://www.mod.gov.rs/rss.php?lat",
 }
 
 BURIMET_INFO = {
@@ -58,6 +60,7 @@ BURIMET_INFO = {
     "Danas": dict(domeni="danas.rs", gjuha="sr", lloji="media", vendi="RS"),
     "RSE": dict(domeni="slobodnaevropa.org", gjuha="sr", lloji="media", vendi="RS"),
     "Informer": dict(domeni="informer.rs", gjuha="sr", lloji="media", vendi="RS"),
+    "MO Srbije": dict(domeni="mod.gov.rs", gjuha="sr", lloji="zyrtar", vendi="RS"),
 }
 AGENT = "osint-prototype/1.0"
 PUNETORE = 8  # sa shkarkime paralele
@@ -65,7 +68,11 @@ PUNETORE = 8  # sa shkarkime paralele
 MAKS_PER_FEED = 15
 GDELT_PAUZA = 10
 GDELT = "https://api.gdeltproject.org/api/v2/doc/doc"
-KOSOVA = re.compile(r"\b(kosov|kosmet|metohij|kosovsk|косов|космет|метохиј|prištin|prishtin|pristina|приштин|mitrovic|митровиц|zvečan|звечан|leposavi|лепосави|zubin potok|зубин поток|jarinj|јарињ|brnjak|брњак|merdar|мердар|kfor|кфор|fsk|ksf)", re.I)
+KOSOVA = re.compile(r"\b(kosov|kosmet|metohij|kosovsk|косов|космет|метохиј|prištin|prishtin|pristina|приштин|mitrovic|митровиц|zve[čcç]an|звечан|leposavi|лепосави|zubin\w* potok|зубин\w* поток|gazivod|газивод|ujman|jarinj|јарињ|brnjak|брњак|merdar|мердар|kfor|кфор|fsk|ksf)", re.I)
+# Formulimi shqip për forca ushtarake serbe që taksonomia s'e kap ("forcat serbe", "ushtarët serbë").
+# shortcut: jeton këtu që të mos preket kercenimet.py para ngrirjes; zhvendose te taksonomia pas saj.
+USHTARAK_SQ = re.compile(r"\b(?:forc|ushtar|xhandarm)\w*(?: (?:ushtarake|speciale|[eë] armatosura))?"
+                         r"(?: [eë]| të)? serb", re.I)
 
 
 @lru_cache(maxsize=1)
@@ -92,9 +99,6 @@ def _regex_ushtarak_dron():
 
 def ka_lidhje(burimi, titulli, permbledhja=""):
     info = BURIMET_INFO.get(burimi)
-    if info is None and burimi == "MO Srbije":
-        # Filtër i gatshëm për burimin zyrtar, por pa feed të verifikuar aktiv.
-        info = dict(gjuha="sr", lloji="zyrtar", vendi="RS")
     if info is None:
         return True
     tekst = f"{titulli or ''} {pastro_html(permbledhja or '')}".strip()
@@ -106,7 +110,7 @@ def ka_lidhje(burimi, titulli, permbledhja=""):
     if info["lloji"] == "zyrtar" and info["vendi"] == "RS":
         militar = _regex_ushtarak_dron()
         return bool(KOSOVA.search(tekst) or (militar and militar.search(tekst)))
-    return bool(KOSOVA.search(tekst) or (kercenime and kercenime.search(tekst)))
+    return bool(KOSOVA.search(tekst) or USHTARAK_SQ.search(tekst) or (kercenime and kercenime.search(tekst)))
 
 
 def hosti(url):
@@ -579,7 +583,7 @@ def mblidh_te_gjitha():
 
 
 def kontrollo():
-    global _shkarko, nxirr_tekstin, pergatit
+    global _shkarko, nxirr_tekstin, pergatit, shkarko, ruaj_te_gjitha
     import scoring
     import inspect
     import contextlib
@@ -615,6 +619,42 @@ def kontrollo():
     assert ka_lidhje("RSE", "Policia arrestoi të dyshuarit në Kosovë")
     assert ka_lidhje("Informer", "Izveštaj o Kosovu")
     assert ka_lidhje("RTS", "") is False and ka_lidhje("Koha", "") is True
+    # Humbjet e auditit: lakimet e Gazivodës, Zubin Potokut, Zveçanit dhe formulimi shqip ushtarak
+    for b, t in (("RTS", "Dron iznad Gazivoda"), ("Novosti", "Пад нивоа воде у Газиводама"),
+                 ("Danas", "Napad na policiju u Zubinom Potoku"), ("RTS", "Барикаде код Зубиног Потока"),
+                 ("RSE", "Incident u Zvecanu"), ("Hibrid.info", "Forcat serbe afër kufirit"),
+                 ("Hibrid.info", "Lëvizje të forcave ushtarake serbe pranë kufirit"),
+                 ("Hibrid.info", "Ushtarët serbë në gatishmëri"),
+                 ("Policia e Kosovës", "Sulm ndaj personit zyrtar në Zveçan")):
+        assert ka_lidhje(b, t), t
+    import correlator
+    for b, u in FEEDS.items():  # emri dhe domeni përputhen te FEEDS, BURIMET_INFO dhe correlator
+        assert correlator.DOMENET.get(hosti(u)) == b, b
+        assert b not in BURIMET_INFO or BURIMET_INFO[b]["domeni"] == hosti(u), b
+    assert domeni_i_lejuar("https://www.rts.rs/a") == "rts.rs" and domeni_i_lejuar("https://evil.example/a") is None
+    # Njoftimi policor jashtë veriut bie: vepër e zakonshme, pa spirancë dhe pa term taksonomie
+    for b, t in (("Policia e Kosovës", "Sulm ndaj personit zyrtar në Ferizaj"), ("RTS", "veri"),
+                 ("RTS", "Kiša na severu Srbije"), ("Novosti", "Cene goriva od ponedeljka niže"),
+                 ("Informer", "Potok izlio u Čačku"), ("RTS", "Gazirana pića poskupljuju"),
+                 ("RSE", "Zubin zid u Beogradu"), ("Hibrid.info", "Forcat e Shqipërisë në mision NATO")):
+        assert not ka_lidhje(b, t), t
+    # Kufiri 15 vjen pas filtrit: 40 hyrje ku 30 bien -> 10 mbeten; 20 të vlefshme -> 15 më të rejat
+    parse_v, shkarko_v, ekziston_v, ruaj_v = feedparser.parse, shkarko, db.ekziston_url, ruaj_te_gjitha
+    try:
+        for n_mira, pritet in ((10, 10), (20, 15)):
+            hyrjet = [dict(link=f"https://www.rts.rs/a{i}", title="Dron iznad Gazivoda" if i < n_mira
+                           else "Protest u Beogradu", summary="", published_parsed=(2026, 11, 1 + i, 0, 0, 0))
+                      for i in range(40)]
+            feedparser.parse = lambda _t, h=hyrjet: type("F", (), {"version": "rss20", "entries": h})()
+            shkarko = lambda *_a, **_k: b"<rss/>"
+            db.ekziston_url = lambda _u: False
+            marre = []
+            ruaj_te_gjitha = lambda d, **_k: (marre.extend(d), (0, {"plote": 0, "permbledhje": 0, "deshtoi": 0}))[1]
+            with contextlib.redirect_stdout(io.StringIO()):
+                mblidh_rss("RTS", "https://www.rts.rs/vesti/rss.html")
+            assert len(marre) == pritet and marre[0][1] == f"https://www.rts.rs/a{n_mira - 1}", (n_mira, len(marre))
+    finally:
+        feedparser.parse, shkarko, db.ekziston_url, ruaj_te_gjitha = parse_v, shkarko_v, ekziston_v, ruaj_v
     assert url_normalizuar("https://a.test/x/?utm_source=a&fbclid=z#f") == "https://a.test/x"
     assert normalizo_lidhjen_rss("http://www.rtklive.com/a", "rtklive.com") == "https://www.rtklive.com/a"
     assert normalizo_lidhjen_rss("http://evil.example/a", "rtklive.com").startswith("http://")
