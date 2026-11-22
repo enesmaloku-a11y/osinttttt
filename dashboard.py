@@ -150,7 +150,7 @@ SAKTESIA = {"village": "fshat", "municipality": "komunë", "region": "vetëm raj
             "exact": "e saktë", "approximate": "e përafërt", None: "e panjohur"}
 # Ngjyrat e prioritetit në grafikë (të njëjtat si në hartë). Matrica s'ka "i pallogaritur":
 # ngjarjet pa rrezik të llogaritur s'vizatohen aty.
-NGJYRAT = ["#e5484d", "#e8a33d", "#4c9aff", "#6b7a90", "#3a4660"]  # urgjente, raport, monitorim, arkiv, pa
+NGJYRAT = ["#d95f59", "#bd9250", "#7790a6", "#7790a6", "#7790a6"]  # vetëm urgjenca dallohet fort
 NGJYRA_HEX = dict(zip(kercenimet.PRIORITETET, NGJYRAT))  # rrathët e hartës, si te grafikët
 NGJYRAT_PRIORITETIT = alt.Scale(domain=kercenimet.PRIORITETET + ["i pallogaritur"], range=NGJYRAT)
 NGJYRAT_MATRICES = alt.Scale(domain=kercenimet.PRIORITETET, range=NGJYRAT[:4])
@@ -289,9 +289,8 @@ def kartela(e, skeda):
     n_pav = det.get("burime_te_pavarura")
     n_pav = n_pav if type(n_pav) is int and n_pav >= 0 else len(det.get("mediat") or [])
     burime = " · :orange[1 burim i vetëm]" if n_pav == 1 else f" · {n_pav} origjina" if n_pav > 1 else ""
-    koka = (f"{ETIKETA.get(p, ETIKETA[None])} {dita_e_ngjarjes(e)} · {raporti.pastro(e['titulli'], 120)}"
-            f" · rreziku {pike if pike is not None else '–'} · besueshmëria {perqind(b)}"
-            + (f" · {kodi}" if kodi else "") + f"{burime}{VENDIMI[e['statusi']]}")
+    koka = (f"{ETIKETA.get(p, ETIKETA[None])} {raporti.pastro(e['titulli'], 120)}"
+            f" · Ngjarja: {dita_e_ngjarjes(e)}{burime}{VENDIMI[e['statusi']]}")
     with st.expander(koka):
         r1, r2, r3 = st.columns(3)
         r1.metric("Rreziku", f"{pike}/100" if pike is not None else "–", help="Sa e rëndë nëse është e vërtetë")
@@ -549,7 +548,8 @@ def harta_e(ngjarjet):
 # ---------------- Përmbledhja ----------------
 # Çdo e dhënë nga baza kalon nga html.escape para se të hyjë në HTML
 mbledhja_e_fundit = pd.to_datetime(artikujt["mbledhur_me"], format="mixed", utc=True, errors="coerce").max()
-perditesuar = mbledhja_e_fundit.strftime("%Y-%m-%d %H:%M UTC") if pd.notna(mbledhja_e_fundit) else "–"
+perditesuar = (mbledhja_e_fundit.tz_convert("Europe/Belgrade").strftime("%d.%m.%Y, %H:%M")
+               if pd.notna(mbledhja_e_fundit) else "ende pa mbledhje")
 punon = ekzekuto.po_punon()
 gjendja = (("DEMO", NGJYRAT[3]) if DEMO_CLOUD
            else ("MBLEDHJA PO PUNON", NGJYRAT[1]) if punon
@@ -559,13 +559,13 @@ VENDI_KOKES.markdown(f"""<div class="klasifikimi">E PAKLASIFIKUAR · VETËM BURI
 <div class="shiriti"><div><div class="emri">OSINT <span>KOSOVA</span></div>
 <div class="nen">Qendra e situatës · kërcënimet hibride ndaj FSK-së dhe sigurisë së Kosovës</div></div>
 <div class="gjendja"><span class="pika" style="--c:{gjendja[1]}"></span>{gjendja[0]}<br>
-Mbledhja e fundit: {perditesuar}<br>Sistemi sugjeron · analisti vendos</div></div>""", unsafe_allow_html=True)
+Artikulli i fundit u mblodh: {perditesuar}<br>Ora lokale e Kosovës · analisti vendos</div></div>""", unsafe_allow_html=True)
 
 per_verif = sum(map(raporti.per_verifikim, urgjente))
-pllakat = [("Urgjente", len(urgjente), NGJYRAT[0]), ("Për verifikim", per_verif, NGJYRAT[1]),
-           ("Raporte", sum(raporti.prioriteti(e) == "RAPORT" for e in aktive), NGJYRAT[1]),
-           ("Në monitorim", sum(raporti.prioriteti(e) == "MONITORIM" for e in aktive), NGJYRAT[2]),
-           ("Artikuj", len(f), NGJYRAT[3])]
+pllakat = [("Urgjente", len(urgjente), NGJYRAT[0]), ("Prej tyre: për verifikim", per_verif, NGJYRAT[1]),
+           ("Për raport", sum(raporti.prioriteti(e) == "RAPORT" for e in aktive), NGJYRAT[2]),
+           ("Në monitorim", sum(raporti.prioriteti(e) == "MONITORIM" for e in aktive), NGJYRAT[3]),
+           ("Artikuj të mbledhur", len(f), NGJYRAT[4])]
 # BLUF: një fjali për atë që ka më shumë rëndësi tani
 if urgjente:
     e0 = urgjente[0]
@@ -595,6 +595,7 @@ with tab_per:
     with statusi_k:
         st.subheader("Gjendja")
         kolona_e_statusit()
+        st.caption("‘Për verifikim’ është pjesë e ngjarjeve urgjente. Numrat e kartelave nuk mblidhen bashkë.")
     with harta_k:
         st.subheader("Harta e situatës")
         (jug, per), (veri, lin) = PAMJET["Kosova"][0]
