@@ -16,6 +16,7 @@ DOSJA = Path(__file__).resolve().parent
 # (skedari i modulit, argumentet për python). Modulet që mungojnë në këtë degë anashkalohen.
 KONTROLLET = [
     ("db.py", ["db.py"]),
+    ("processor.py", ["processor.py", "--kontrollo"]),
     ("collector.py", ["collector.py", "--kontrollo"]),
     ("extractor.py", ["extractor.py", "0"]),
     ("correlator.py", ["correlator.py"]),
@@ -32,7 +33,7 @@ KONTROLLET = [
     ("raporti.py", ["raporti.py", "2026-11-18"]),
     # Me OSINT_NGRIRE=1 main() del para çdo hapi (as Ollama, as rrjet)
     ("main.py (ngrirja)", ["-c", "import os; os.environ['OSINT_NGRIRE'] = '1'; import main, processor; "
-                          "processor.ollama_gati = lambda: (_ for _ in ()).throw(AssertionError('s u ngri')); "
+                          "processor.model_gati = lambda: (_ for _ in ()).throw(AssertionError('s u ngri')); "
                           "main.main(1)"]),
     ("demo.py", ["demo.py", "--kontrollo"]),
     ("dashboard.py", ["-c", "from streamlit.testing.v1 import AppTest; "
