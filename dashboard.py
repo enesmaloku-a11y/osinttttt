@@ -42,48 +42,54 @@ RAPORTI_MODELIT = DOSJA / "data" / "raporti_modelit.json"  # nga trajno.py
 st.set_page_config(page_title="OSINT Kosova", layout="wide", initial_sidebar_state="collapsed")
 # Vetëm stil (pa të dhëna brenda), ndaj unsafe_allow_html këtu s'hap rrugë për HTML nga lajmet
 st.markdown("""<style>
-:root { --bg2: #111c30; --vija: #22304d; --zbehte: #8796ad; --theks: #d9a23b; }
-html, body, [class*="css"] { font-family: "Segoe UI", "Inter", system-ui, sans-serif; }
+:root { --bg: #05080a; --bg2: #0b1113; --vija: #1c2a26; --zbehte: #6f8a80; --theks: #3ddc84; }
+html, body, p, label, input, textarea, .shiriti, .pllaka, .bluf, .feed, .legjenda, .klasifikimi {
+    font-family: "JetBrains Mono", "IBM Plex Mono", Consolas, "Courier New", monospace; }
 [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] { display: none; }
-.block-container { padding-top: 4rem; max-width: 1500px; }
-h3 { font-size: .8rem !important; letter-spacing: .14em; text-transform: uppercase; color: var(--zbehte);
-     border-left: 3px solid var(--theks); padding: .05rem 0 .05rem .55rem; margin: 1.1rem 0 .6rem; }
-.klasifikimi { background: var(--theks); color: #0a1222; text-align: center; font-size: .7rem; font-weight: 700;
-               letter-spacing: .3em; padding: .18rem; border-radius: 2px; margin-bottom: .8rem; }
+.block-container { padding-top: 3.6rem; max-width: 1600px; }
+h3 { font-size: .74rem !important; letter-spacing: .16em; text-transform: uppercase; color: var(--zbehte);
+     border-bottom: 1px solid var(--vija); padding: 0 0 .3rem; margin: 1rem 0 .55rem; }
+.klasifikimi { border: 1px solid var(--theks); color: var(--theks); text-align: center; font-size: .66rem;
+               letter-spacing: .32em; padding: .15rem; margin-bottom: .6rem; }
 .shiriti { display: flex; justify-content: space-between; align-items: center; background: var(--bg2);
-           border: 1px solid var(--vija); border-radius: 6px; padding: .7rem 1.1rem; margin-bottom: .8rem; }
-.shiriti .emri { font-size: 1.35rem; font-weight: 700; letter-spacing: .18em; }
+           border: 1px solid var(--vija); padding: .5rem .9rem; margin-bottom: .6rem; }
+.shiriti .emri { font-size: 1.05rem; font-weight: 700; letter-spacing: .22em; }
 .shiriti .emri span { color: var(--theks); }
-.shiriti .nen { color: var(--zbehte); font-size: .78rem; letter-spacing: .04em; margin-top: .1rem; }
-.shiriti .gjendja { text-align: right; font-size: .78rem; color: var(--zbehte); line-height: 1.5; }
-.pika { display: inline-block; width: .55rem; height: .55rem; border-radius: 50%; margin-right: .35rem;
-        background: var(--c); box-shadow: 0 0 6px var(--c); }
-.status { display: grid; grid-template-columns: repeat(5, 1fr); gap: .55rem; }
-.feed { max-height: 520px; overflow-y: auto; display: grid; gap: .45rem; padding-right: .2rem; }
-.lajm { background: var(--bg2); border: 1px solid var(--vija); border-left: 4px solid var(--c);
-        border-radius: 6px; padding: .5rem .7rem; }
-.lajm .koha { color: var(--zbehte); font-size: .72rem; letter-spacing: .06em; }
-.lajm .koha b { color: var(--c); letter-spacing: .1em; }
-.lajm .tit { font-size: .88rem; line-height: 1.35; margin: .15rem 0; }
-.lajm .bur { color: var(--zbehte); font-size: .74rem; }
+.shiriti .nen { color: var(--zbehte); font-size: .68rem; letter-spacing: .14em; text-transform: uppercase; margin-top: .15rem; }
+.shiriti .gjendja { text-align: right; font-size: .7rem; color: var(--zbehte); line-height: 1.55; letter-spacing: .06em; }
+.etiketa { display: inline-block; border: 1px solid var(--c); color: var(--c); padding: 0 .4rem; margin-left: .35rem;
+           font-size: .66rem; letter-spacing: .12em; }
+.pika { display: inline-block; width: .5rem; height: .5rem; border-radius: 50%; margin-right: .35rem;
+        background: var(--c); box-shadow: 0 0 8px var(--c); }
+.status { display: grid; grid-template-columns: repeat(5, 1fr); gap: .45rem; }
 .pllaka { display: flex; justify-content: space-between; align-items: center; background: var(--bg2);
-          border: 1px solid var(--vija); border-left: 4px solid var(--c); border-radius: 6px; padding: .55rem .9rem; }
-.pllaka .t { color: var(--zbehte); font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; }
-.pllaka .v { font-size: 1.75rem; font-weight: 700; color: var(--c); }
-.bluf { background: var(--bg2); border: 1px solid var(--vija); border-radius: 6px; padding: .7rem .9rem;
-        margin-top: .55rem; font-size: .9rem; line-height: 1.45; }
-.bluf .t { color: var(--theks); font-size: .7rem; letter-spacing: .14em; text-transform: uppercase;
-           margin-bottom: .25rem; font-weight: 600; }
-.seksion { color: var(--theks); font-size: .7rem; letter-spacing: .14em; text-transform: uppercase;
-           font-weight: 600; margin: .9rem 0 .35rem; }
-[role="tablist"] { gap: .35rem; border-bottom: 1px solid var(--vija); }
+          border: 1px solid var(--vija); border-top: 2px solid var(--c); padding: .45rem .75rem; }
+.pllaka .t { color: var(--zbehte); font-size: .66rem; letter-spacing: .14em; text-transform: uppercase; }
+.pllaka .v { font-size: 1.5rem; font-weight: 700; color: var(--c); text-shadow: 0 0 10px var(--c); }
+.bluf { background: var(--bg2); border: 1px solid var(--vija); border-left: 2px solid var(--theks);
+        padding: .55rem .8rem; margin-top: .45rem; font-size: .8rem; line-height: 1.5; }
+.bluf .t { color: var(--theks); font-size: .64rem; letter-spacing: .16em; text-transform: uppercase; margin-bottom: .2rem; }
+.seksion { color: var(--theks); font-size: .64rem; letter-spacing: .16em; text-transform: uppercase; margin: .8rem 0 .3rem; }
+.feed { max-height: 520px; overflow-y: auto; background: var(--bg2); border: 1px solid var(--vija); }
+.lajm { display: grid; grid-template-columns: 6.5rem 1fr auto; gap: .6rem; align-items: start;
+        padding: .45rem .7rem; border-bottom: 1px solid var(--vija); }
+.lajm:hover { background: #0f191b; }
+.lajm .koha { color: var(--zbehte); font-size: .66rem; letter-spacing: .04em; }
+.lajm .tit { font-size: .74rem; line-height: 1.4; }
+.lajm .bur { color: var(--zbehte); font-size: .64rem; margin-top: .1rem; }
+.lajm .st { color: var(--c); font-size: .64rem; font-weight: 700; letter-spacing: .1em; text-align: right; white-space: nowrap; }
+.legjenda { display: flex; gap: 1.1rem; background: var(--bg2); border: 1px solid var(--vija); border-top: none;
+            padding: .3rem .7rem; font-size: .64rem; letter-spacing: .12em; color: var(--zbehte); }
+[role="tablist"] { gap: .25rem; border-bottom: 1px solid var(--vija); }
 [role="tab"] { background: var(--bg2); border: 1px solid var(--vija) !important; border-bottom: none !important;
-                     border-radius: 6px 6px 0 0; padding: .35rem .9rem !important; }
+               border-radius: 0; padding: .28rem .8rem !important; }
 [role="tab"][aria-selected="true"] { background: var(--theks); }
-[role="tab"][aria-selected="true"] p { color: #0a1222 !important; font-weight: 700; }
-[role="tab"] p { font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; }
-[data-testid="stExpander"] details { background: var(--bg2); border: 1px solid var(--vija); border-radius: 6px; }
+[role="tab"][aria-selected="true"] p { color: #05080a !important; font-weight: 700; }
+[role="tab"] p { font-size: .7rem; letter-spacing: .12em; text-transform: uppercase; }
+[data-testid="stExpander"] details { background: var(--bg2); border: 1px solid var(--vija); border-radius: 0; }
 [data-testid="stMetricValue"] { color: var(--theks); }
+button[kind="primary"] { background: var(--theks) !important; color: #05080a !important; border-radius: 0 !important; }
+button { border-radius: 0 !important; }
 </style>""", unsafe_allow_html=True)
 FJALEKALIMI = os.environ.get("OSINT_FJALEKALIMI")
 if FJALEKALIMI and not st.session_state.get("hyri"):
@@ -194,7 +200,7 @@ def kat_en(e):
 
 # Ngjyrat e prioritetit në grafikë (të njëjtat si në hartë). Matrica s'ka "i pallogaritur":
 # ngjarjet pa rrezik të llogaritur s'vizatohen aty.
-NGJYRAT = ["#e5484d", "#e8a33d", "#4c9aff", "#6b7a90", "#3a4660"]  # urgjente, raport, monitorim, arkiv, pa
+NGJYRAT = ["#ff4d4d", "#f5a524", "#3ddc84", "#5b6b66", "#2a3632"]  # urgjente, raport, monitorim, arkiv, pa
 NGJYRA_HEX = dict(zip(kercenimet.PRIORITETET, NGJYRAT))  # rrathët e hartës, si te grafikët
 NGJYRA_EN = {PRIO_EN[k]: v for k, v in NGJYRA_HEX.items()}  # tabelat shfaqin prioritetin në anglisht
 NGJYRAT_PRIORITETIT = alt.Scale(domain=[PRIO_EN[k] for k in kercenimet.PRIORITETET] + ["NOT SCORED"], range=NGJYRAT)
@@ -565,6 +571,9 @@ def harta_e(ngjarjet):
     (lat_jug, lon_per), (lat_veri, lon_lin) = PAMJET["Europe"][0]
     harta = folium.Map(location=[42.56, 20.90], zoom_start=8, min_zoom=4, max_bounds=True,
                        min_lat=lat_jug, max_lat=lat_veri, min_lon=lon_per, max_lon=lon_lin)
+    harta.get_root().header.add_child(folium.Element(
+        "<style>.leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.8) contrast(.95) "
+        "saturate(.35)}.leaflet-container{background:#05080a}</style>"))
     for e in ngjarjet:
         if e.get("lat") is None or e.get("lon") is None:
             continue
@@ -602,10 +611,12 @@ gjendja = (("DEMO", NGJYRAT[3]) if DEMO_CLOUD
            else ("FROZEN", NGJYRAT[3]) if raporti.ngrire()
            else ("READY", "#3ecf8e"))
 VENDI_KOKES.markdown(f"""<div class="klasifikimi">UNCLASSIFIED · OPEN SOURCES ONLY (OSINT)</div>
-<div class="shiriti"><div><div class="emri">OSINT <span>KOSOVO</span></div>
-<div class="nen">Situation centre · hybrid threats to the KSF and Kosovo's security</div></div>
-<div class="gjendja"><span class="pika" style="--c:{gjendja[1]}"></span>{gjendja[0]}<br>
-Last collection: {perditesuar}<br>The system suggests · the analyst decides</div></div>""", unsafe_allow_html=True)
+<div class="shiriti"><div><div class="emri">OSINT <span>KOSOVO</span><span class="etiketa" style="--c:#3ddc84">
+<span class="pika" style="--c:#3ddc84"></span>LIVE</span></div>
+<div class="nen">Situation monitor · hybrid threats to the KSF and Kosovo's security</div></div>
+<div class="gjendja">{pd.Timestamp.now(tz="UTC").strftime("%a, %d %b %Y %H:%M UTC").upper()}<br>
+<span class="pika" style="--c:{gjendja[1]}"></span>{gjendja[0]} · last collection {perditesuar}<br>
+The system suggests · the analyst decides</div></div>""", unsafe_allow_html=True)
 
 per_verif = sum(map(raporti.per_verifikim, urgjente))
 pllakat = [("Urgent", len(urgjente), NGJYRAT[0]), ("For verification", per_verif, NGJYRAT[1]),
@@ -641,10 +652,10 @@ def lista_live(ngjarjet, sa=15):
         burimi = (burimi_i_url.get(b[0]) or urlparse(str(b[0])).hostname or "–") if b else "–"
         koha = publikimi_i_pare(e) if publikimi_i_pare(e) != "–" else dita_e_ngjarjes(e)
         rreshtat.append(
-            f'<div class="lajm" style="--c:{NGJYRA_HEX.get(p, NGJYRAT[4])}"><div class="koha">'
-            f'<b>{html.escape(PRIO_EN.get(p, str(p)))}</b> · {html.escape(koha)}</div>'
-            f'<div class="tit">{html.escape(raporti.rresht(e["titulli"], 160))}</div>'
-            f'<div class="bur">{html.escape(burimi)} · {html.escape(kat_en(e))}</div></div>')
+            f'<div class="lajm" style="--c:{NGJYRA_HEX.get(p, NGJYRAT[4])}"><div class="koha">{html.escape(koha)}</div>'
+            f'<div><div class="tit">{html.escape(raporti.rresht(e["titulli"], 140))}</div>'
+            f'<div class="bur">{html.escape(burimi)} · {html.escape(kat_en(e))}</div></div>'
+            f'<div class="st">{html.escape(PRIO_EN.get(p, str(p)))}</div></div>')
     st.markdown('<div class="feed">' + ("".join(rreshtat) or '<div class="bur">No events yet.</div>')
                 + "</div>", unsafe_allow_html=True)
 
@@ -662,6 +673,9 @@ with tab_per:
         (jug, per), (veri, lin) = PAMJET["Kosovo"][0]
         st_folium(harta_e(aktive), height=520, width="stretch", returned_objects=[], key="harta_per",
                   center=[(jug + veri) / 2, (per + lin) / 2], zoom=PAMJET["Kosovo"][1])
+        st.markdown('<div class="legjenda">' + "".join(
+            f'<span><span class="pika" style="--c:{c}"></span>{t}</span>'
+            for t, c in zip(("URGENT", "REPORT", "MONITOR", "ARCHIVE"), NGJYRAT)) + "</div>", unsafe_allow_html=True)
     with lista_k:
         st.subheader("Live feed")
         lista_live(aktive)
