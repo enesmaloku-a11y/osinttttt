@@ -1,9 +1,11 @@
-feedparser
-trafilatura
-langdetect
-streamlit
-altair
-folium
-streamlit-folium
-pandas
-scikit-learn
+# Versionet me të cilat kaluan të 25 kontrollet e kontrollo.py (2026-11-22).
+# trafilatura: versioni i provuar më 2026-11-21. Varësitë e tërthorta (numpy, scipy...) s'janë fiksuar.
+feedparser==6.0.14
+trafilatura==2.3.1
+langdetect==1.0.9
+streamlit==1.66.1
+altair==6.3.0
+folium==1.0.0
+streamlit-folium==0.27.4
+pandas==3.0.3
+scikit-learn==1.9.1
