@@ -71,11 +71,11 @@ KONTROLLET = [
                                    "from streamlit.testing.v1 import AppTest; "
                                    "at = AppTest.from_file('dashboard.py', default_timeout=120).run(); "
                                    "assert not at.exception, [x.value for x in at.exception]; "
-                                   "b = [x for x in at.button if any(f in x.label for f in ('Ekzekuto', 'Mblidh lajmet', 'orarin'))]; "
+                                   "b = [x for x in at.button if any(f in x.label for f in ('Run now', 'Collect news', 'Save schedule'))]; "
                                    "assert len(b) == 3 and all(x.disabled for x in b), [(x.label, x.disabled) for x in b]; "
                                    "assert Path(db.DB_PATH).parent.name.startswith('osint-demo-'); "
                                    "assert not Path('demo.db').exists() and len(db.ngjarjet()) == 28; "
-                                   "assert not any(x.label == 'Ruaj vendimin' for x in at.button)"]),
+                                   "assert not any(x.label == 'Save decision' for x in at.button)"]),
     # Demo + postimet sociale: data vetëm-ditë (gold) dhe me orë (Apify) bashkë; asnjë s'humbet te Artikujt
     ("dashboard.py (data të përziera)", ["-c", "import os, demo, apify_burimi, db; "
                                    "p = os.path.join(os.path.dirname(os.environ['OSINT_DB']), 'demo_sociale.db'); "
