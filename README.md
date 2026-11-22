@@ -59,7 +59,7 @@ $env:OSINT_DB="demo.db"; python -m streamlit run dashboard.py
 ### Kontrollet në Windows
 
 ```powershell
-python kontrollo.py                   # 19 kontrolle, pa Ollama dhe pa rrjet
+python kontrollo.py                   # 20 kontrolle, pa Ollama dhe pa rrjet
 python collector.py --kontrollo
 ```
 
