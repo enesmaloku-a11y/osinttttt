@@ -16,6 +16,7 @@ DOSJA = Path(__file__).resolve().parent
 # (skedari i modulit, argumentet për python). Modulet që mungojnë në këtë degë anashkalohen.
 KONTROLLET = [
     ("db.py", ["db.py"]),
+    ("processor.py", ["processor.py", "--kontrollo"]),
     ("collector.py", ["collector.py", "--kontrollo"]),
     ("extractor.py", ["extractor.py", "0"]),
     ("correlator.py", ["correlator.py"]),
@@ -32,7 +33,7 @@ KONTROLLET = [
     ("raporti.py", ["raporti.py", "2026-11-18"]),
     # Me OSINT_NGRIRE=1 main() del para çdo hapi (as Ollama, as rrjet)
     ("main.py (ngrirja)", ["-c", "import os; os.environ['OSINT_NGRIRE'] = '1'; import main, processor; "
-                          "processor.ollama_gati = lambda: (_ for _ in ()).throw(AssertionError('s u ngri')); "
+                          "processor.model_gati = lambda: (_ for _ in ()).throw(AssertionError('s u ngri')); "
                           "main.main(1)"]),
     ("demo.py", ["demo.py", "--kontrollo"]),
     ("dashboard.py", ["-c", "from streamlit.testing.v1 import AppTest; "
@@ -55,6 +56,16 @@ KONTROLLET = [
                                    "assert len(b) == 3 and all(x.disabled for x in b), [(x.label, x.disabled) for x in b]; "
                                    "n = sqlite3.connect('demo.db').execute('SELECT COUNT(*) FROM articles').fetchone()[0]; "
                                    "assert n > 0 and len(at.expander) > 0, (n, len(at.expander))"]),
+    # Demo + postimet sociale: data vetëm-ditë (gold) dhe me orë (Apify) bashkë; asnjë s'humbet te Artikujt
+    ("dashboard.py (data të përziera)", ["-c", "import os, demo, apify_burimi, db; "
+                                   "p = os.path.join(os.path.dirname(os.environ['OSINT_DB']), 'demo_sociale.db'); "
+                                   "demo.gjenero(p); apify_burimi.demo(p); os.environ['OSINT_DB'] = db.DB_PATH = p; "
+                                   "from streamlit.testing.v1 import AppTest; "
+                                   "at = AppTest.from_file('dashboard.py', default_timeout=120).run(); "
+                                   "assert not at.exception, [x.value for x in at.exception]; "
+                                   "df = next(d.value for d in at.dataframe if {'burimi', 'titulli', 'data'} <= set(d.value.columns)); "
+                                   "s = df[df['burimi'].str.startswith('Reddit:')]; "
+                                   "assert len(s) and s['data'].notna().all(), s"]),
 ]
 
 

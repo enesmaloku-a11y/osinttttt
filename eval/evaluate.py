@@ -417,8 +417,9 @@ def kontrollo():
 if __name__ == "__main__":
     kontrollo()
     gold = lexo_gold()
-    if not processor.ollama_gati():
-        sys.exit("Ollama nuk po punon. Nise me 'ollama serve' dhe provo përsëri.")
+    if not processor.model_gati():
+        sys.exit("Modeli s'është gati: nis Ollama ('ollama serve'), ose me LLM_PROVIDER=featherless "
+                 "vendos FEATHERLESS_API_KEY dhe FEATHERLESS_MODEL.")
     print(f"Gold set: {len(gold)} artikuj. Pipeline-i po kalon (mund të zgjasë disa minuta)...")
     rezultatet, ngjarjet, sekonda, info = ekzekuto(gold)
     metrikat = mat(gold, rezultatet, ngjarjet, info["rajonale"], info["detajet"])

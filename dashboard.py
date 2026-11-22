@@ -185,7 +185,8 @@ def koha_e(e):
     return min(orat).strftime("%Y-%m-%d %H:%M") if orat else str(e.get("data") or "–")[:10]
 
 
-artikujt["data"] = pd.to_datetime(artikujt["data"], utc=True, errors="coerce")
+# ISO8601: pa të pandas e merr formatin nga rreshti i parë ("2026-11-20") dhe i bën NaT ato me orë (Apify, RSS)
+artikujt["data"] = pd.to_datetime(artikujt["data"], utc=True, errors="coerce", format="ISO8601")
 # Të gjitha domenet e GDELT bashkohen në një grup që grafiku të mbetet i lexueshëm
 artikujt["grupi"] = artikujt["burimi"].where(~artikujt["burimi"].str.startswith("GDELT:"), "GDELT")
 
@@ -877,6 +878,29 @@ with tab_ekz:
                                          if ok else f"Gabim nga Task Scheduler: {mesazhi}")
         if ok:
             st.rerun()
+
+    # Rrjetet sociale: postimet hyjnë si artikuj; "Ekzekuto tani" pastaj i analizon si lajmet
+    st.subheader("Rrjetet sociale (Apify)")
+    import apify_burimi
+    st.caption("Statusi i lejes: " + " · ".join(f"{p}: {s}" for p, s in apify_burimi.STATUSI.items())
+               + ". Aktivizohet me APIFY_LEJET te variablat e serverit.")
+    s1, s2, s3 = st.columns([1, 1, 2])
+    platforma = s1.selectbox("Platforma", list(apify_burimi.PLATFORMAT), key="apify_platforma")
+    menyra = s2.radio("Nga", ["Dataset", "Run", "Nisje e re (me pagesë)"], key="apify_menyra")
+    id_apify = s3.text_input("Dataset ID ose Run ID", key="apify_id", disabled=menyra.startswith("Nisje"))
+    if st.button("Merr postimet", disabled=ngrire, key="apify_merr"):
+        try:
+            with st.spinner("Po merren postimet nga Apify..."):
+                if menyra == "Dataset":
+                    rez = apify_burimi.importo(platforma, dataset=id_apify.strip())
+                elif menyra == "Run":
+                    rez = apify_burimi.importo(platforma, run=id_apify.strip())
+                else:
+                    rez = apify_burimi.nis(platforma, 20)
+            st.success(f"{platforma}: {rez}. Tani shtyp 'Ekzekuto tani' që modeli t'i analizojë.")
+            st.cache_data.clear()
+        except apify_burimi.GabimApify as e:
+            st.error(f"{platforma}: {e}")
 
     st.subheader("Log-u i fundit")
     st.code(ekzekuto.log_fundit(25), language=None)

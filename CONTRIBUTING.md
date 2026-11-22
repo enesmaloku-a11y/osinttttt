@@ -28,6 +28,10 @@ $env:OSINT_DB="demo.db"; python -m streamlit run dashboard.py
 | `OSINT_FJALEKALIMI` | (bosh) | Fjalëkalimi i dashboard-it për URL publike; pa të s'kërkohet |
 | `OLLAMA_URL` | `http://localhost:11434/api/generate` | Adresa e Ollama-s |
 | `OLLAMA_MODEL` | `deepseek-r1:8b` | Modeli lokal |
+| `LLM_PROVIDER` | `ollama` | `featherless` dërgon tekstin e lajmeve te API-ja e Featherless në cloud. Vetëm për demo-n online (p.sh. Railway), mbi lajme publike; laptopi i analistit mbetet te Ollama |
+| `FEATHERLESS_API_KEY` | (bosh) | Çelësi i Featherless, vetëm në variablat e serverit. Kurrë në repo. Pa të, `LLM_PROVIDER=featherless` s'niset |
+| `FEATHERLESS_MODEL` | (bosh) | Emri i modelit te Featherless (i detyrueshëm) |
+| `FEATHERLESS_BASE_URL` | `https://api.featherless.ai/v1` | Adresa e API-së |
 | `APIFY_TOKEN` | (bosh) | Çelësi i Apify për rrjetet sociale (`apify_burimi.py`); ose skedari `~/.apify_token`. Kurrë në repo. Pa të, importi nga Apify jep "joaktiv"; skedarët lokalë dhe demo punojnë pa të |
 
 ## Baza e të dhënave
