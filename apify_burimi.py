@@ -40,6 +40,13 @@ PRITJE = "në pritje të lejes"
 # Ndryshohet vetëm kur marrëveshja e platformës mbulon mbledhjen, ruajtjen, analizën me model
 # dhe shfaqjen te FSK-ja (shih README, "Rrjetet sociale").
 STATUSI = {"reddit": PRITJE, "x": SINTETIKE, "telegram": SINTETIKE}
+# Operatori i aktivizon pasi leja të verifikohet, p.sh. APIFY_LEJET="reddit,x" te variablat e serverit
+for _p in os.environ.get("APIFY_LEJET", "").replace(" ", "").lower().split(","):
+    if _p in STATUSI:
+        STATUSI[_p] = AKTIVE
+# Subreddit-et që skanohen drejtpërdrejt (p.sh. r/osint_demo_test); bosh = kërkim me fjalë kyçe
+REDDIT_URLS = [u.strip() for u in os.environ.get("APIFY_REDDIT_URLS", "").split(",")
+               if u.strip().startswith("https://www.reddit.com/r/")]
 
 API = "https://api.apify.com"
 FAQJA = 100            # rreshta për kërkesë te dataset-i
@@ -141,8 +148,9 @@ def artikull_x(t):
 PLATFORMAT = {
     "reddit": {"actor": "automation-lab~reddit-scraper", "maks": 1000, "artikulli": artikull_reddit,
                "hostet": {"www.reddit.com", "reddit.com", "old.reddit.com"},
-               "hyrja": lambda n: {"searchQueries": KERKIMET_REDDIT, "sort": "relevance", "timeFilter": "week",
-                                   "maxPostsPerSource": max(1, n // len(KERKIMET_REDDIT)),
+               "hyrja": lambda n: {**({"urls": REDDIT_URLS, "sort": "new"} if REDDIT_URLS else
+                                      {"searchQueries": KERKIMET_REDDIT, "sort": "relevance", "timeFilter": "week"}),
+                                   "maxPostsPerSource": max(1, n // len(REDDIT_URLS or KERKIMET_REDDIT)),
                                    "includeComments": False, "includeNsfw": False,
                                    "filterKeywords": FILTRI, "deduplicatePosts": True}},
     "x": {"actor": "xquik~x-tweet-scraper", "maks": 1000, "artikulli": artikull_x,
@@ -434,6 +442,14 @@ def kontrollet():
             kerko, db.DB_PATH, NUMRI, FAQJA = kerko_vjeter, vjeter, numri, faqja
             STATUSI["reddit"] = PRITJE
             os.environ.pop("APIFY_TOKEN", None)
+    # Subreddit i caktuar: skanohet ai, jo kërkimi
+    REDDIT_URLS.append("https://www.reddit.com/r/osint_demo_test/")
+    try:
+        h = PLATFORMAT["reddit"]["hyrja"](20)
+        assert h["urls"] == ["https://www.reddit.com/r/osint_demo_test/"] and "searchQueries" not in h
+    finally:
+        REDDIT_URLS.clear()
+    assert "searchQueries" in PLATFORMAT["reddit"]["hyrja"](20)
     print("Kontrollet kaluan: apify_burimi (normalizimi, dublikatat, ripostimet, faqet, lejet, timeout).")
 
 
