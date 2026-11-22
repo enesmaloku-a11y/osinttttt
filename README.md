@@ -59,7 +59,7 @@ $env:OSINT_DB="demo.db"; python -m streamlit run dashboard.py
 ### Kontrollet në Windows
 
 ```powershell
-python kontrollo.py                   # 20 kontrolle, pa Ollama dhe pa rrjet
+python kontrollo.py                   # 21 kontrolle, pa Ollama dhe pa rrjet
 python collector.py --kontrollo
 ```
 
@@ -76,6 +76,23 @@ Në cloud (Linux, ose lokalisht me `OSINT_CLOUD=1`) dashboard-i krijon vetë `de
 1. Te share.streamlit.io: **Create app**, repo `enesmaloku-a11y/osinttttt`, dega `main`, skedari `dashboard.py`. Te **Advanced settings** zgjidh Python 3.12.
 2. Mos vendos `OSINT_DB`, `APIFY_TOKEN` apo `osint.db` në cloud: aty shkon vetëm demo-ja.
 3. Te **Settings → Sharing**, lejo vetëm email-et e ekipit dhe të jurisë.
+
+### Live në Railway (me Ollama)
+
+Railway mund të mbajë edhe Ollama-n, ndaj aty dashboard-i mbledh dhe analizon lajme reale. Dy shërbime në të njëjtin projekt:
+
+1. **Ollama:** shërbim nga imazhi Docker `ollama/ollama`, me volum te `/root/.ollama` dhe të paktën 8 GB RAM. Pas nisjes, te shërbimi ekzekuto një herë `ollama pull deepseek-r1:8b`. Mos i jep domen publik: e thërret vetëm aplikacioni, përmes rrjetit privat të Railway.
+2. **Aplikacioni:** nga repo-ja (dega `main`). Nis me `Procfile`. Volum te `/data` dhe këto variabla:
+
+| Variabla | Vlera |
+|---|---|
+| `OSINT_CLOUD` | `0` (pa të, Linux-i hapet si demo sintetike) |
+| `OSINT_DB` | `/data/osint.db` (në volum, që të mos humbasë në rinisje) |
+| `OLLAMA_URL` | `http://<emri-i-sherbimit-ollama>.railway.internal:11434/api/generate` |
+| `OLLAMA_MODEL` | `deepseek-r1:8b` |
+| `OSINT_FJALEKALIMI` | fjalëkalim i fortë: pa të, kushdo me URL-në mund të nisë mbledhjen dhe të ndryshojë vendimet |
+
+Baza nis bosh: "Mblidh lajmet tani" e mbush nga mediat. Pa GPU modeli punon më ngadalë se në laptop, dhe kostoja e Railway rritet me RAM-in dhe kohën. `osint.db` lokale s'hyn në Git dhe s'ngarkohet në Railway. Orari automatik (Task Scheduler) punon vetëm në Windows.
 
 ## Rrjetet sociale (Apify)
 

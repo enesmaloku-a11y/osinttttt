@@ -24,6 +24,8 @@ $env:OSINT_DB="demo.db"; python -m streamlit run dashboard.py
 | Variabla | Parazgjedhja | Për çfarë |
 |---|---|---|
 | `OSINT_DB` | `osint.db` | Baza SQLite, p.sh. `demo.db` ose një kopje për prova |
+| `OSINT_CLOUD` | `1` në Linux, `0` në Windows | `1` = demo sintetike pa pipeline (Streamlit Cloud); `0` = live me Ollama (laptop, Railway) |
+| `OSINT_FJALEKALIMI` | (bosh) | Fjalëkalimi i dashboard-it për URL publike; pa të s'kërkohet |
 | `OLLAMA_URL` | `http://localhost:11434/api/generate` | Adresa e Ollama-s |
 | `OLLAMA_MODEL` | `deepseek-r1:8b` | Modeli lokal |
 | `LLM_PROVIDER` | `ollama` | `featherless` dërgon tekstin e lajmeve te API-ja e Featherless në cloud. Vetëm për demo-n online (p.sh. Railway), mbi lajme publike; laptopi i analistit mbetet te Ollama |

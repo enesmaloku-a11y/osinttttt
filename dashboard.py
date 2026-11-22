@@ -5,6 +5,7 @@ Skedat: Përmbledhja (rrezik x besueshmëri, Serbia, zonat), Urgjente dhe Raport
 të rreziku.py), Ngjarjet (harta, kronologjia), Kërcënimet (taksonomia), Burimet, Vlerësimi,
 Artikujt, Ekzekutimi.
 """
+import hmac
 import html
 import json
 import os
@@ -73,13 +74,24 @@ h3 { font-size: .8rem !important; letter-spacing: .14em; text-transform: upperca
 [data-testid="stExpander"] details { background: var(--bg2); border: 1px solid var(--vija); border-radius: 6px; }
 [data-testid="stMetricValue"] { color: var(--theks); }
 </style>""", unsafe_allow_html=True)
+FJALEKALIMI = os.environ.get("OSINT_FJALEKALIMI")
+if FJALEKALIMI and not st.session_state.get("hyri"):
+    dhene = st.text_input("Fjalëkalimi", type="password")
+    if not hmac.compare_digest(dhene.encode(), FJALEKALIMI.encode()):
+        if dhene:
+            st.error("Fjalëkalim i gabuar.")
+        st.stop()
+    st.session_state["hyri"] = True
+    st.rerun()
+
 # Koka dhe paneli i komandës zënë vendin lart; mbushen më poshtë, pasi të llogariten numrat
 VENDI_KOKES = st.container()
 KOMANDA = st.expander("Komanda: mbledhja dhe filtrat", expanded=False)
 
 # Cloud (Streamlit Cloud është Linux, pa Ollama): vetëm demo me të dhëna sintetike, pa nisje të
-# pipeline-it. OSINT_CLOUD=1 e provon këtë mënyrë edhe në Windows.
-CLOUD = os.environ.get("OSINT_CLOUD", "1" if os.name != "nt" else "0") == "1"
+# pipeline-it. OSINT_CLOUD=1 e provon këtë mënyrë edhe në Windows; OSINT_CLOUD=0 lejon pipeline-in
+# në Linux kur ka Ollama (p.sh. Railway).
+CLOUD = os.environ.get("OSINT_CLOUD", "0" if os.name == "nt" else "1") == "1"
 
 
 @st.cache_resource

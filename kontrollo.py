@@ -39,6 +39,14 @@ KONTROLLET = [
     ("dashboard.py", ["-c", "from streamlit.testing.v1 import AppTest; "
                          "at = AppTest.from_file('dashboard.py', default_timeout=90).run(); "
                          "assert not at.exception, [x.value for x in at.exception]"]),
+    # Me fjalëkalim: pa e dhënë, faqja s'tregon asgjë përveç fushës së fjalëkalimit
+    ("dashboard.py (fjalëkalimi)", ["-c", "import os; os.environ['OSINT_FJALEKALIMI'] = 'prove-123'; "
+                                         "from streamlit.testing.v1 import AppTest; "
+                                         "at = AppTest.from_file('dashboard.py', default_timeout=120).run(); "
+                                         "assert not at.exception and not at.tabs and len(at.text_input) == 1; "
+                                         "at.text_input[0].input('gabim').run(); assert not at.tabs and at.error; "
+                                         "at.text_input[0].input('prove-123').run(); "
+                                         "assert not at.exception and len(at.tabs) > 5, [x.value for x in at.exception]"]),
     # Si në Streamlit Cloud: pa OSINT_DB krijon vetë demo.db, dhe s'lejon nisjen e pipeline-it
     ("dashboard.py (cloud)", ["-c", "import os, sqlite3; os.environ.pop('OSINT_DB'); os.environ['OSINT_CLOUD'] = '1'; "
                                    "from streamlit.testing.v1 import AppTest; "
