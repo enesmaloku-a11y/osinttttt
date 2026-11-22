@@ -43,7 +43,9 @@ KERCENIM = re.compile(r"\b(?:threat\w*\s+(?:to\s+)?(?:carry\s+out\s+)?(?:an?\s+)
                       r"|(?:plan\w*|vow\w*|announc\w*|call\w*\s+for)\s+(?:an?\s+)?(?:\w+\s+)?attacks?\b"
                       r"|(?:will|going\s+to)\s+attack\b)", re.I)
 # Demantimet dhe lajmet e rreme për kërcënime s'janë vetë kërcënime
-JO_KERCENIM = re.compile(r"\b(?:no|false\w*|fake|den(?:y|ies|ied)|hoax|rumou?r\w*)\b", re.I)
+# "no" vetëm kur mohon vetë kërcënimin: "no official confirmation" / "no injuries" s'e bëjnë demantim
+JO_KERCENIM = re.compile(r"\b(?:no\s+(?:real\s+|credible\s+)?(?:threat|attack|plan)\w*|false\w*|fake|den(?:y|ies|ied)"
+                         r"|hoax|rumou?r\w*)\b", re.I)
 KERCENIM_PIKE = 10
 # Shenjestrat që e lidhin një ngjarje rajonale drejtpërdrejt me Kosovën
 RAJONALE_ME_LIDHJE = {"fsk", "kfor_nato", "institucione", "infrastrukture_kritike"}
@@ -432,4 +434,10 @@ if __name__ == "__main__":
               "Kosovo football club plans attacking style for the new season.",
               "The Serbian army is scheduled to hold a training exercise near Kosovo."):
         assert vlereso({**kerc, "titulli": t}, {"mediat": ["Reddit:r/x"]}, sot="2026-11-22")["rreziku"]["niveli"] != "i lartë", t
+    # Kërcënimi i pakonfirmuar mbetet kërcënim; "no threat" mbetet demantim
+    for t, pritet in (("An unidentified group threatened to carry out an attack in Kosovo, with no official confirmation.", True),
+                      ("Social media post threatens attack on KSF in Kosovo; no injuries reported.", True),
+                      ("Police say there is no threat of an attack in Kosovo.", False)):
+        v = vlereso({**kerc, "titulli": t}, {"mediat": ["Reddit:r/x"], "aktori": "i_panjohur"}, sot="2026-11-22")
+        assert (v["prioriteti"] == "URGJENTE") is pritet, (t, v["rreziku"])
     print(f"Kontrollet kaluan: {len(RASTET)} raste, vetitë dhe kontrolli me DB të përkohshme.")
