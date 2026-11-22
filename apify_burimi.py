@@ -148,10 +148,12 @@ def artikull_x(t):
 PLATFORMAT = {
     "reddit": {"actor": "automation-lab~reddit-scraper", "maks": 1000, "artikulli": artikull_reddit,
                "hostet": {"www.reddit.com", "reddit.com", "old.reddit.com"},
+               # Subreddit-i i ekipit (REDDIT_URLS) merret i plotë edhe kur Reddit e shënon NSFW;
+               # te kërkimi i përgjithshëm NSFW-ja mbetet jashtë
                "hyrja": lambda n: {**({"urls": REDDIT_URLS, "sort": "new"} if REDDIT_URLS else
                                       {"searchQueries": KERKIMET_REDDIT, "sort": "relevance", "timeFilter": "week"}),
                                    "maxPostsPerSource": max(1, n // len(REDDIT_URLS or KERKIMET_REDDIT)),
-                                   "includeComments": False, "includeNsfw": False,
+                                   "includeComments": False, "includeNsfw": bool(REDDIT_URLS),
                                    "filterKeywords": FILTRI, "deduplicatePosts": True}},
     "x": {"actor": "xquik~x-tweet-scraper", "maks": 1000, "artikulli": artikull_x,
           "hostet": {"x.com"},
@@ -447,9 +449,10 @@ def kontrollet():
     try:
         h = PLATFORMAT["reddit"]["hyrja"](20)
         assert h["urls"] == ["https://www.reddit.com/r/osint_demo_test/"] and "searchQueries" not in h
+        assert h["includeNsfw"] is True
     finally:
         REDDIT_URLS.clear()
-    assert "searchQueries" in PLATFORMAT["reddit"]["hyrja"](20)
+    assert "searchQueries" in PLATFORMAT["reddit"]["hyrja"](20) and PLATFORMAT["reddit"]["hyrja"](20)["includeNsfw"] is False
     print("Kontrollet kaluan: apify_burimi (normalizimi, dublikatat, ripostimet, faqet, lejet, timeout).")
 
 
