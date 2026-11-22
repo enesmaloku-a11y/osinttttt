@@ -173,7 +173,8 @@ def koha_e(e):
     return min(orat).strftime("%Y-%m-%d %H:%M") if orat else str(e.get("data") or "–")[:10]
 
 
-artikujt["data"] = pd.to_datetime(artikujt["data"], utc=True, errors="coerce")
+# ISO8601: pa të pandas e merr formatin nga rreshti i parë ("2026-11-20") dhe i bën NaT ato me orë (Apify, RSS)
+artikujt["data"] = pd.to_datetime(artikujt["data"], utc=True, errors="coerce", format="ISO8601")
 # Të gjitha domenet e GDELT bashkohen në një grup që grafiku të mbetet i lexueshëm
 artikujt["grupi"] = artikujt["burimi"].where(~artikujt["burimi"].str.startswith("GDELT:"), "GDELT")
 
