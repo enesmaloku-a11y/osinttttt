@@ -7,18 +7,20 @@ Nis me:  python eval/evaluate.py
 - Kalon të njëjtin pipeline si sistemi: processor -> extractor -> correlator -> scoring
   -> rreziku (nëse rreziku.py ekziston). Konteksti (EUvsDisinfo/EuRepoC) s'thirret, sepse varet
   nga skedarët lokalë te data/.
-- Përdor bazë të veçantë eval/eval.db (rikrijohet çdo herë); osint.db nuk preket.
+- Përdor një bazë SQLite të përkohshme për çdo ekzekutim dhe rregullat e besueshmërisë.
 - Kërkon Ollama lokal, si processor.py.
 - Mat edhe kategorinë (K2), nivelin e rrezikut dhe URGJENTE (K9), me numra bruto dhe interval
   Wilson 95%: me pak artikuj sintetikë, një përqindje e vetme do të mashtronte.
 """
 import importlib.util
 import json
+import os
 import sys
 import time
 from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 
 DOSJA = Path(__file__).resolve().parent
 sys.path.insert(0, str(DOSJA.parent))  # modulet e projektit janë një nivel më lart
@@ -31,7 +33,6 @@ import processor  # noqa: E402
 import scoring  # noqa: E402
 
 GOLD = DOSJA / "gold.jsonl"
-DB_EVAL = DOSJA / "eval.db"
 REZULTATI = DOSJA / "rezultati.json"  # e lexon dashboard-i
 # shortcut: supozim për kohën e analistit; zëvendësoje me matje reale nëse e keni
 MINUTA_MANUALE = 3
@@ -67,36 +68,41 @@ def url_e(g):
 
 
 def ekzekuto(gold):
-    """Fut gold set-in në eval.db dhe kalon pipeline-in.
-    Kthen ({id: JSON i extractor}, [[id, ...] për çdo ngjarje], sekonda, info).
-    info["rajonale"]: për çdo ngjarje, flamuri "rajonale" që vendosi correlator.py;
-    info["detajet"]: detajet_json (dict) e çdo ngjarjeje, në të njëjtën radhë."""
-    if DB_EVAL.exists():
-        DB_EVAL.unlink()
-    db.DB_PATH = str(DB_EVAL)
-    for g in gold:
-        db.ruaj_artikull(url=url_e(g), burimi=g["burimi"], titulli=g["titulli"],
-                         data=g["data"], gjuha=g["gjuha"], teksti=g["teksti"])
+    """Kalon pipeline-in në një bazë të përkohshme dhe kthen artikujt, grupet, kohën dhe detajet."""
+    if not gold:
+        raise ValueError("Gold set-i është bosh.")
+    vjeter = db.DB_PATH
+    with TemporaryDirectory(prefix="osint-eval-") as dosja:
+        db.DB_PATH = str(Path(dosja) / "eval.db")
+        try:
+            for g in gold:
+                db.ruaj_artikull(url=url_e(g), burimi=g["burimi"], titulli=g["titulli"],
+                                 data=g["data"], gjuha=g["gjuha"], teksti=g["teksti"],
+                                 published_at=g["data"])
 
-    n = len(gold)
-    t0 = time.time()
-    _, gabime_perkthimi = processor.perpuno(n)
-    _, filtruar, gabime_nxjerrje, _ = extractor.perpuno(n)
-    correlator.korrelo()
-    scoring.vlereso_te_gjitha()
-    # Rreziku (A) vetëm nëse moduli ekziston; "sot" = data më e re e gold-it, për determinizëm
-    if importlib.util.find_spec("rreziku"):
-        importlib.import_module("rreziku").vlereso_te_gjitha(sot=max(g["data"][:10] for g in gold))
-    sekonda = time.time() - t0
+            n = len(gold)
+            t0 = time.perf_counter()
+            _, gabime_perkthimi = processor.perpuno(n)
+            _, filtruar, gabime_nxjerrje, _ = extractor.perpuno(n)
+            correlator.korrelo()
+            scoring.vlereso_te_gjitha(perdor_modelin=False)
+            # "Sot" = data më e re e gold-it, për një dritare të riprodhueshme rreziku.
+            ka_rrezik = importlib.util.find_spec("rreziku") is not None
+            if ka_rrezik:
+                importlib.import_module("rreziku").vlereso_te_gjitha(sot=max(g["data"][:10] for g in gold))
+            sekonda = time.perf_counter() - t0
 
-    id_e = {url_e(g): g["id"] for g in gold}
-    rezultatet = {id_e[r["url"]]: json.loads(r["rezultati_json"]) for r in db.artikuj_te_nxjerre()}
-    te_gjitha = db.ngjarjet()
-    ngjarjet = [[id_e[u] for u in json.loads(e["burimet"])] for e in te_gjitha]
-    detajet = [json.loads(e["detajet_json"] or "{}") for e in te_gjitha]
-    info = {"filtruar": filtruar, "gabime": gabime_perkthimi + gabime_nxjerrje,
-            "rajonale": [d.get("rajonale") is True for d in detajet], "detajet": detajet}
-    return rezultatet, ngjarjet, sekonda, info
+            id_e = {url_e(g): g["id"] for g in gold}
+            rezultatet = {id_e[r["url"]]: json.loads(r["rezultati_json"]) for r in db.artikuj_te_nxjerre()}
+            te_gjitha = db.ngjarjet()
+            ngjarjet = [[id_e[u] for u in json.loads(e["burimet"])] for e in te_gjitha]
+            detajet = [json.loads(e["detajet_json"] or "{}") for e in te_gjitha]
+            info = {"filtruar": filtruar, "gabime": gabime_perkthimi + gabime_nxjerrje,
+                    "rreziku_ekzekutuar": ka_rrezik,
+                    "rajonale": [d.get("rajonale") is True for d in detajet], "detajet": detajet}
+            return rezultatet, ngjarjet, sekonda, info
+        finally:
+            db.DB_PATH = vjeter
 
 
 def pjese(a, b):
@@ -125,7 +131,7 @@ def kn(k, n):
     return f"{k}/{n} [{w[0]:.2f}–{w[1]:.2f}]" if w else f"{k}/{n}"
 
 
-def mat(gold, rezultatet, ngjarjet, rajonale=None, detajet=None):
+def mat(gold, rezultatet, ngjarjet, rajonale=None, detajet=None, *, rreziku_ekzekutuar=None):
     """Krahason parashikimet me gold set-in dhe kthen metrikat.
     rezultatet: {id: JSON i extractor.py}; ngjarjet: [[id, ...], ...] nga correlator.py;
     rajonale: [bool, ...] flamuri "rajonale" i çdo ngjarjeje (None = s'kontrollohet);
@@ -135,7 +141,7 @@ def mat(gold, rezultatet, ngjarjet, rajonale=None, detajet=None):
     mungojne, alarme, lloji_gabim = [], [], []
     for g in gold:
         p, r = g["pritet"], rezultatet.get(g["id"], {})  # pa rezultat = s'u gjet
-        gjet = r.get("is_security_event") is True
+        gjet = correlator.merret(r)
         gj = gjuhet[g["gjuha"]]
         if p["is_security_event"] and gjet:
             tp += 1
@@ -162,9 +168,9 @@ def mat(gold, rezultatet, ngjarjet, rajonale=None, detajet=None):
     te_pritura, rajonale_pritura = defaultdict(set), set()
     for g in gold:
         if g["pritet"]["is_security_event"]:
-            te_pritura[g["pritet"]["grupi"]].add(g["id"])
+            te_pritura[grupi[g["id"]]].add(g["id"])
             if not g["pritet"]["in_kosovo"]:
-                rajonale_pritura.add(g["pritet"]["grupi"])
+                rajonale_pritura.add(grupi[g["id"]])
     parashikuara = [set(n) for n in ngjarjet]
     sakta = {k for k, ids in te_pritura.items() if ids in parashikuara}
     shumegjuhesh = {k for k, ids in te_pritura.items() if len({gjuha[i] for i in ids}) > 1}
@@ -180,35 +186,46 @@ def mat(gold, rezultatet, ngjarjet, rajonale=None, detajet=None):
     for g in me_kategori:
         k = g["pritet"]["kategoria"]
         pranuara = k if isinstance(k, list) else [k]
-        mori = rezultatet.get(g["id"], {}).get("kategoria")
+        rezultati = rezultatet.get(g["id"], {})
+        mori = rezultati.get("kategoria") if correlator.merret(rezultati) else None
         if mori in pranuara:
             kategoria_ok += 1
         else:
             kategoria_gabim.append(f"{g['id']}: {mori} (pritej {'/'.join(pranuara)})")
 
-    # K9: rreziku, prioriteti dhe aktori sipas grupit. Ngjarja e grupit = ajo me më shumë artikuj
-    # të tij; grupi pa ngjarje numërohet si gabim.
-    etiketa = {g["pritet"]["grupi"]: g["pritet"] for g in gold
-               if g["pritet"]["grupi"] and g["pritet"].get("rreziku_niveli")}
+    # Një parashikim i përket grupit që ka shumicën e artikujve. Nga ndarjet e të njëjtit
+    # grup merret ajo me më shumë artikuj të grupit dhe më pak artikuj të tjerë.
+    etiketa = {grupi[g["id"]]: g["pritet"] for g in gold if g["pritet"]["is_security_event"]}
     ka_detaje = detajet is not None
     ka_rrezik = ka_detaje and any(isinstance(d, dict) and "rreziku" in d for d in detajet)
+    if rreziku_ekzekutuar is not None:
+        ka_rrezik = rreziku_ekzekutuar
     nivelet = kercenimet.NIVELET
 
-    def det_e(grupi):
-        ids = te_pritura.get(grupi, set())
-        i = max(range(len(parashikuara)), key=lambda i: len(parashikuara[i] & ids), default=None)
-        return detajet[i] if i is not None and parashikuara[i] & ids else {}
+    perputhjet = {}
+    for n, d in zip(parashikuara, detajet or []):
+        numri = Counter(grupi[i] for i in n)
+        if not numri or not isinstance(d, dict):
+            continue
+        k, artikuj = numri.most_common(1)[0]
+        cilesia = (artikuj, artikuj - len(n))
+        if k in etiketa and 2 * artikuj > len(n):
+            if k not in perputhjet or cilesia > perputhjet[k][0]:
+                perputhjet[k] = (cilesia, d)
 
-    rreziku_ok = prioriteti_ok = prioriteti_n = aktori_ok = aktori_n = 0
+    rreziku_ok = rreziku_n = prioriteti_ok = prioriteti_n = aktori_ok = aktori_n = 0
     urgjente_grupe = urgjente_kapura = gabime_2_nivele = 0
     konfuzioni = {n: {m: 0 for m in nivelet} for n in nivelet}  # pritet -> parashikuar
     for grupi_i, p in etiketa.items():
-        d = det_e(grupi_i) if ka_detaje else {}
+        d = perputhjet.get(grupi_i, (None, {}))[1]
         niveli = (d.get("rreziku") or {}).get("niveli")
-        rreziku_ok += niveli == p["rreziku_niveli"]
-        if niveli in nivelet:
-            konfuzioni[p["rreziku_niveli"]][niveli] += 1
-            gabime_2_nivele += {niveli, p["rreziku_niveli"]} == {nivelet[0], nivelet[2]}
+        pritet_niveli = p.get("rreziku_niveli")
+        if pritet_niveli:
+            rreziku_n += 1
+            rreziku_ok += niveli == pritet_niveli
+            if niveli in nivelet:
+                konfuzioni[pritet_niveli][niveli] += 1
+                gabime_2_nivele += {niveli, pritet_niveli} == {nivelet[0], nivelet[2]}
         if p.get("prioriteti"):
             prioriteti_n += 1
             prioriteti_ok += d.get("prioriteti") == p["prioriteti"]
@@ -218,12 +235,9 @@ def mat(gold, rezultatet, ngjarjet, rajonale=None, detajet=None):
         if p.get("aktori"):
             aktori_n += 1
             aktori_ok += d.get("aktori") == p["aktori"]
-    # Precision e URGJENTE: ngjarjet e parashikuara URGJENTE, grupi kryesor i të cilave është
-    # URGJENTE; ngjarjet nga artikuj jo-sigurie (pa grup) janë alarme të rreme
-    urgjente_parashikuara = [n for n, d in zip(parashikuara, detajet or [])
-                             if isinstance(d, dict) and d.get("prioriteti") == "URGJENTE"]
-    urgjente_sakta = sum(etiketa.get(Counter(grupi[i] for i in n).most_common(1)[0][0], {})
-                         .get("prioriteti") == "URGJENTE" for n in urgjente_parashikuara)
+    # Çdo grup i pritur jep më së shumti një alarm të saktë. Ndarjet shtesë mbeten në emërues.
+    urgjente_parashikuara = sum(isinstance(d, dict) and d.get("prioriteti") == "URGJENTE"
+                                for d in (detajet or []))
 
     def vetem_me_rrezik(v):
         return v if ka_rrezik else None
@@ -244,12 +258,12 @@ def mat(gold, rezultatet, ngjarjet, rajonale=None, detajet=None):
         # K9 (None = s'u mat: pa detaje ose pa rreziku.py, ose emëruesi 0)
         "kategoria_ok": kategoria_ok, "kategoria_gjithsej": len(me_kategori),
         "kategoria_gabim": kategoria_gabim,
-        "rreziku_ok": vetem_me_rrezik(rreziku_ok), "rreziku_gjithsej": vetem_me_rrezik(len(etiketa)),
+        "rreziku_ok": vetem_me_rrezik(rreziku_ok), "rreziku_gjithsej": vetem_me_rrezik(rreziku_n),
         "prioriteti_ok": vetem_me_rrezik(prioriteti_ok), "prioriteti_gjithsej": vetem_me_rrezik(prioriteti_n),
-        "urgjente_precision": vetem_me_rrezik(pjese_ose_none(urgjente_sakta, len(urgjente_parashikuara))),
+        "urgjente_precision": vetem_me_rrezik(pjese_ose_none(urgjente_kapura, urgjente_parashikuara)),
         "urgjente_recall": vetem_me_rrezik(pjese_ose_none(urgjente_kapura, urgjente_grupe)),
-        "urgjente_sakta": vetem_me_rrezik(urgjente_sakta),
-        "urgjente_parashikuara": vetem_me_rrezik(len(urgjente_parashikuara)),
+        "urgjente_sakta": vetem_me_rrezik(urgjente_kapura),
+        "urgjente_parashikuara": vetem_me_rrezik(urgjente_parashikuara),
         "urgjente_kapura": vetem_me_rrezik(urgjente_kapura), "urgjente_grupe": vetem_me_rrezik(urgjente_grupe),
         "aktori_ok": aktori_ok if ka_detaje else None, "aktori_gjithsej": aktori_n if ka_detaje else None,
         "rreziku_konfuzioni": vetem_me_rrezik(konfuzioni),
@@ -257,9 +271,9 @@ def mat(gold, rezultatet, ngjarjet, rajonale=None, detajet=None):
         "intervalet": {
             "precision": wilson(tp, tp + fp), "recall": wilson(tp, tp + fn),
             "kategoria": wilson(kategoria_ok, len(me_kategori)),
-            "rreziku": vetem_me_rrezik(wilson(rreziku_ok, len(etiketa))),
+            "rreziku": vetem_me_rrezik(wilson(rreziku_ok, rreziku_n)),
             "prioriteti": vetem_me_rrezik(wilson(prioriteti_ok, prioriteti_n)),
-            "urgjente_precision": vetem_me_rrezik(wilson(urgjente_sakta, len(urgjente_parashikuara))),
+            "urgjente_precision": vetem_me_rrezik(wilson(urgjente_kapura, urgjente_parashikuara)),
             "urgjente_recall": vetem_me_rrezik(wilson(urgjente_kapura, urgjente_grupe)),
         },
     }
@@ -282,7 +296,7 @@ def shfaq(m, sekonda, n, info):
           "  (jashtë Kosovës, me flamurin 'rajonale')")
     print(f"Kategoria e saktë:      {kn(m['kategoria_ok'], m['kategoria_gjithsej'])}  (sipas artikullit)")
     if m["rreziku_ok"] is None:
-        print("Rreziku/URGJENTE:       e pamatur (rreziku.py mungonte gjatë eval-it)")
+        print("Rreziku/URGJENTE:       e pamatur në këtë ekzekutim")
     else:
         print(f"Niveli i rrezikut:      {kn(m['rreziku_ok'], m['rreziku_gjithsej'])}  (sipas grupit)"
               f" · gabime i lartë<->i ulët: {m['gabime_2_nivele']}")
@@ -312,16 +326,32 @@ def shfaq(m, sekonda, n, info):
 
 
 def ruaj_rezultatin(m, sekonda, n):
-    """Shkruan eval/rezultati.json për dashboard-in."""
+    """Publikon raportin vetëm pasi JSON-i i plotë është shkruar."""
     rezultati = {"koha": datetime.now().isoformat(timespec="seconds"), "modeli": processor.MODELI,
                  "artikuj": n, "sekonda": round(sekonda, 1), "minuta_manuale": MINUTA_MANUALE,
-                 "metrikat": m}
-    with open(REZULTATI, "w", encoding="utf-8") as f:
-        json.dump(rezultati, f, ensure_ascii=False, indent=2)
+                 "skorimi": "rregulla", "perputhja_ngjarjeve": "nje-me-nje", "metrikat": m}
+    with NamedTemporaryFile("w", dir=REZULTATI.parent, encoding="utf-8", delete=False) as f:
+        emer = Path(f.name)
+        try:
+            json.dump(rezultati, f, ensure_ascii=False, indent=2, allow_nan=False)
+            f.close()
+            os.replace(emer, REZULTATI)
+        finally:
+            f.close()
+            emer.unlink(missing_ok=True)
 
 
 def kontrollo():
     """Kontroll i vogël i metrikave me parashikime të shpikura (pa model)."""
+    from io import BytesIO
+    from unittest.mock import patch
+
+    with patch.object(processor, "MODELI", "probe:latest"):
+        for katalogu, gati in ((b'{"models": [{"name": "probe"}]}', True),
+                              (b'{"models": [{"model": "other:latest"}]}', False),
+                              (b'{"other": null}', False), (b"jo JSON", False)):
+            with patch.object(processor.urllib.request, "urlopen", return_value=BytesIO(katalogu)):
+                assert processor.ollama_gati() == gati, katalogu
     gold = [
         {"id": "a1", "gjuha": "sq", "pritet": {"is_security_event": True, "in_kosovo": True,
                                                "type": ["arrest"], "grupi": "E1"}},
@@ -343,6 +373,9 @@ def kontrollo():
     assert m["shumegjuhesh_gjithsej"] == 1, m
     m = mat(gold, rez, [["a1", "a2"], ["a3"]])
     assert m["ngjarje_sakta"] == 1 and m["shumegjuhesh_sakta"] == 1 and m["bashkime_gabim"] == 0, m
+    # Një artikull i palidhur me Kosovën nuk hyn në ngjarje, edhe kur modeli e njeh si incident.
+    m = mat(gold, {**rez, "a3": {**rez["a3"], "relevante": False}}, [["a1", "a2"]])
+    assert (m["tp"], m["fp"], m["fn"]) == (2, 0, 1), m
 
     # Rasti rajonal: E3 ndodhi jashtë Kosovës dhe u raportua në dy gjuhë
     pritet_r = {"is_security_event": True, "in_kosovo": False, "type": ["explosion_weapons"], "grupi": "E3"}
@@ -402,6 +435,16 @@ def kontrollo():
     # Asnjë URGJENTE e parashikuar -> precision None (jo 0, jo exception), recall 0
     m = mat(gold_k, rez_k, ngj_k, detajet=[d("i mesëm", "RAPORT")] * 4)
     assert m["urgjente_precision"] is None and m["urgjente_recall"] == 0.0, m
+    # Dy pjesë të një urgjence japin vetëm një parashikim të saktë.
+    ndarje = gold_k + [art("k5", "U1", kategoria="ushtarak_serbia", rreziku_niveli="i lartë",
+                          prioriteti="URGJENTE")]
+    m = mat(ndarje, rez_k, [["k1"], ["k5"]], detajet=[d("i lartë", "URGJENTE")] * 2)
+    assert (m["urgjente_sakta"], m["urgjente_kapura"], m["urgjente_precision"]) == (1, 1, 0.5), m
+    # Një bashkim pa shumicë nuk mund të mbulojë dy urgjenca të pavarura.
+    m = mat(gold_k, rez_k, [["k1", "k2"]], detajet=[d("i lartë", "URGJENTE")])
+    assert (m["urgjente_sakta"], m["urgjente_kapura"], m["urgjente_precision"]) == (0, 0, 0), m
+    m = mat(gold_k, {}, [], detajet=[], rreziku_ekzekutuar=True)
+    assert (m["rreziku_ok"], m["rreziku_gjithsej"], m["urgjente_recall"]) == (0, 4, 0.0), m
     # E27: jashtë Kosovës, por ngjarje sigurie -> numërohet te rajonale
     e27 = art("k7", "E27", kategoria="ushtarak_serbia", rreziku_niveli="i mesëm", prioriteti="RAPORT")
     e27["pritet"]["in_kosovo"] = False
@@ -417,12 +460,16 @@ def kontrollo():
 if __name__ == "__main__":
     kontrollo()
     gold = lexo_gold()
-    if not processor.model_gati():
-        sys.exit("Modeli s'është gati: nis Ollama ('ollama serve'), ose me LLM_PROVIDER=featherless "
-                 "vendos FEATHERLESS_API_KEY dhe FEATHERLESS_MODEL.")
+    gabimi = processor.gabimi_modelit()
+    if gabimi:
+        sys.exit(gabimi)
     print(f"Gold set: {len(gold)} artikuj. Pipeline-i po kalon (mund të zgjasë disa minuta)...")
     rezultatet, ngjarjet, sekonda, info = ekzekuto(gold)
-    metrikat = mat(gold, rezultatet, ngjarjet, info["rajonale"], info["detajet"])
+    if info["gabime"] or len(rezultatet) != len(gold):
+        sys.exit(f"Vlerësimi s'u plotësua ({len(rezultatet)}/{len(gold)} artikuj, "
+                 f"{info['gabime']} gabime). Raporti i mëparshëm u ruajt.")
+    metrikat = mat(gold, rezultatet, ngjarjet, info["rajonale"], info["detajet"],
+                  rreziku_ekzekutuar=info["rreziku_ekzekutuar"])
     shfaq(metrikat, sekonda, len(gold), info)
     ruaj_rezultatin(metrikat, sekonda, len(gold))
     print(f"\nU ruajt {REZULTATI}")

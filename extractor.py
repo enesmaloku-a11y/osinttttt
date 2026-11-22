@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 
 import db
 import kercenimet
-from processor import pyet_ollama
+from processor import pastro, pyet_ollama
 
 # Rrënjë fjalësh sigurie në shqip, serbisht (latin + cirilik) dhe anglisht
 FJALE_KYCE = re.compile(
@@ -28,6 +28,7 @@ FJALE_KYCE = re.compile(
     # Kibernetikë, infrastrukturë dhe dezinformim (sq, sr latin + cirilik, en)
     r"kibernet|haker|hack|ddos|sajber|cyber|ransomware|malware|data breach|"
     r"sabot|rrym|nënstacion|ujësjellës|struj|trafostanic|dalekovod|vodovod|infrastrukt|"
+    r"\bnd[ëe]rprerj\w*(?:\s+(?:e|t[ëe]))?\s+(?:ujit|furnizim\w*\s+me\s+uj[ëe])\b|"
     r"outage|blackout|power cut|substation|infrastruct|"
     r"dezinform|disinform|rrem[eë]|lažn|fake news|false (?:claim|report)|"
     r"сајбер|хакер|саботаж|струј|трафостаниц|далековод|водовод|инфраструкт|дезинформ|лажн",
@@ -143,6 +144,8 @@ the summary must say 'alleged'.
 An explosion is "explosion_weapons" even if it cuts power or water.
 A court verdict or trial about an older crime is type "court_case", and its
 event_date is the date of the verdict.
+When the publication date is unknown, give an event date only if the article
+explicitly states an absolute date.
 
 Article published: {data}
 Title: {titulli}
@@ -156,11 +159,17 @@ def ka_fjale_sigurie(a):
 
 
 def numer(v):
-    """Kthen int ose None (modeli ndonjëherë jep "3" ose "disa")."""
-    try:
-        return int(v) if v is not None else None
-    except (TypeError, ValueError):
-        return None
+    """Pranon vetëm numër të plotë jonegativ ose shkrimin e tij me shifra."""
+    if isinstance(v, str) and v.strip().isdecimal():
+        try:
+            v = int(v)
+        except ValueError:
+            return None
+    if type(v) is int and v >= 0:
+        return v
+    if isinstance(v, float) and v >= 0 and v.is_integer():
+        return int(v)
+    return None
 
 
 def valido(r, data_publikimit):
@@ -188,15 +197,20 @@ def valido(r, data_publikimit):
     for k in ("killed", "injured", "arrested"):
         r[k] = numer(r[k])
     # Mbrojtja e të dhënave personale me rregulla, jo me besim te modeli
-    r["actors"] = [str(x) for x in (r["actors"] or []) if x and INSTITUCION.search(str(x))][:5]
-    r["summary"] = fshi_emrat(str(r["summary"] or ""))[:300]
-    # Data e ngjarjes pranohet vetëm nëse bie 0-7 ditë para publikimit
-    pub = data_publikimit[:10]
+    aktoret = r["actors"] if isinstance(r["actors"], list) else []
+    r["actors"] = [fshi_emrat(pastro(x))[:120] for x in aktoret
+                   if isinstance(x, str) and INSTITUCION.search(x)][:5]
+    r["summary"] = fshi_emrat(pastro(r["summary"]))[:300] if isinstance(r["summary"], str) else ""
+    vendi = r["place"]
+    r["place"] = (pastro(vendi)[:120] or None) if isinstance(vendi, str) else None
+    # Kur publikimi njihet, data e ngjarjes duhet të bjerë 0-7 ditë para tij.
+    pub = (data_publikimit or "")[:10]
     try:
         d = datetime.strptime(str(r["event_date"]), "%Y-%m-%d")
-        p = datetime.strptime(pub, "%Y-%m-%d")
-        if not (p - timedelta(days=7) <= d <= p):
-            raise ValueError
+        if pub:
+            p = datetime.strptime(pub, "%Y-%m-%d")
+            if not (p - timedelta(days=7) <= d <= p):
+                raise ValueError
     except ValueError:
         r["event_date"] = None
     # Saktësia: vetëm vlerat e njohura; pa vend/datë s'ka saktësi
@@ -210,12 +224,17 @@ def valido(r, data_publikimit):
 def nxirr(a):
     """Kthen JSON-in e validuar për një artikull."""
     # Përkthimin e përdorim nëse ekziston; përndryshe tekstin origjinal
-    teksti = (a["teksti_perkthyer"] or a["teksti"] or "")[:2500]
-    pergjigja = pyet_ollama(PROMPT.format(llojet=LLOJET, data=a["data"][:10], titulli=a["titulli"],
+    teksti = pastro(a["teksti_perkthyer"] or a["teksti"])[:2500]
+    data = a["published_at"] if "published_at" in a.keys() else a["data"]
+    pergjigja = pyet_ollama(PROMPT.format(llojet=LLOJET, data=(data or "")[:10] or "unknown",
+                                          titulli=pastro(a["titulli"]),
                                           teksti=teksti, kategorite=KATEGORITE_PROMPT,
                                           aktoret=list(kercenimet.AKTORET),
                                           shenjestrat=list(kercenimet.SHENJESTRAT)), si_json=True)
-    return valido(json.loads(pergjigja), a["data"])
+    rezultati = json.loads(pergjigja)
+    if not isinstance(rezultati, dict) or type(rezultati.get("is_security_event")) is not bool:
+        raise ValueError("Modeli s'ktheu is_security_event si vlerë boolean.")
+    return valido(rezultati, data)
 
 
 def perpuno(limit=20):
@@ -284,6 +303,7 @@ if __name__ == "__main__":
     assert valido({"place": "Peja", "place_precision": "city"}, "2026-11-20")["place_precision"] is None
     # Filtri duhet të kapë edhe kibernetikën, infrastrukturën dhe dezinformimin
     for t in ("Hakerët publikuan të dhëna", "Sever Kosova ostao bez struje", "Саботажа далековода",
+              "Ndërprerje e ujit në komunë", "Ndërprerje të furnizimit me ujë",
               "Fake news about poisoned water", "Lajme të rreme për ujin"):
         assert ka_fjale_sigurie({"titulli": t, "teksti": ""}), t
     assert not ka_fjale_sigurie({"titulli": "Kosova fiton ndeshjen miqësore", "teksti": ""})
@@ -307,6 +327,10 @@ if __name__ == "__main__":
                "2026-11-20")
     assert (r["is_security_event"], r["aktori"], r["lidhje_me_fsk"]) == (True, "shteti_serb", True), r
     assert not valido({"kategoria": "ushtarak_serbia", "relevante": False}, "2026-11-20")["is_security_event"]
+    assert [numer(v) for v in (True, -5, 1.5, float("inf"), "3", 4.0, 0)] == [None, None, None, None, 3, 4, 0]
+    r = valido({"actors": 1, "place": {"vendi": "Prishtinë"}, "summary": "Kontakt ndihme: a@b.net"}, None)
+    assert r["actors"] == [] and r["place"] is None and r["event_date"] is None and "a@b.net" not in r["summary"]
+    assert valido({"event_date": "2026-11-20"}, None)["event_date"] == "2026-11-20"
     # Rinxjerrja në DB të përkohshme: rihapen vetëm sigurie pa kategori brenda 14 ditëve,
     # dhe të filtruarat që filtri i ri i kap
     import tempfile

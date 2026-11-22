@@ -19,8 +19,9 @@ import db
 import extractor
 import patterns
 import processor
+import raporti
+import rreziku
 import scoring
-from raporti import ngrire
 
 
 def opsional(emri, funksioni):
@@ -40,13 +41,13 @@ def opsional(emri, funksioni):
 
 def main(n):
     # Ngrirja gjatë etiketimit: as Task Scheduler-i as një terminal tjetër s'e nis pipeline-in
-    if ngrire():
+    if raporti.ngrire():
         print("Pipeline-i është i ngrirë (etiketim): s'u bë asgjë.")
         return
     # Kontrollo para mbledhjes, që të mos presim për asgjë nëse modeli s'punon
-    if not processor.model_gati():
-        sys.exit("Modeli s'është gati: nis Ollama ('ollama serve'), ose me LLM_PROVIDER=featherless "
-                 "vendos FEATHERLESS_API_KEY dhe FEATHERLESS_MODEL.")
+    gabimi = processor.gabimi_modelit()
+    if gabimi:
+        sys.exit(gabimi)
     t0 = time.time()
 
     print("1/7 Mbledhja e artikujve...")
@@ -71,20 +72,20 @@ def main(n):
     scoring.vlereso_te_gjitha()
 
     print("7/7 Rreziku dhe prioriteti...")
-    r = opsional("rreziku", "vlereso_te_gjitha")
-    print(f"  {r} ngjarje të vlerësuara" if r is not None else "  rreziku.py mungon, u anashkalua")
+    r = rreziku.vlereso_te_gjitha()
+    print(f"  {r} ngjarje të vlerësuara")
 
     # Alarmet për rritje të pazakonta (vetëm informim; analisti vendos)
-    alarmet = patterns.rritjet(db.ngjarjet(), fillimi_mbledhjes=db.fillimi_i_mbledhjes())
+    alarmet = patterns.rritjet(raporti.ngjarjet(), fillimi_mbledhjes=db.fillimi_i_mbledhjes())
     for a in alarmet:
         print("  ALARM: " + patterns.pershkrim(a))
 
-    raporti = opsional("raporti", "gjenero")
+    shtegu = raporti.gjenero()
     print(f"\nGati për {time.time() - t0:.0f} s: {te_reja} artikuj të rinj, {perkthyer} të përkthyer, "
           f"{me_model} kaluan te modeli ({ngjarje} ngjarje sigurie), {filtruar} u filtruan pa model, "
           f"{gabime_p + gabime_n} gabime. Gjithsej {grupe} ngjarje në bazë.")
-    if raporti:
-        print(f"Raporti ditor: {raporti}")
+    if shtegu:
+        print(f"Raporti ditor: {shtegu}")
     print("Hap dashboard-in me:  streamlit run dashboard.py")
 
 

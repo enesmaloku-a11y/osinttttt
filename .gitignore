@@ -1,8 +1,12 @@
 reference/
 venv/
+.venv/
 __pycache__/
 # Baza ka tekstin e plotë të artikujve (të drejtat e autorit, emra në tekst): mos e publiko
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
 # Të dhënat e jashtme të kontekst_dezinformim.py (eksporti i EUvsDisinfo): mos i publiko
 data/
 # Skedarët e ekzekutimit lokal (ekzekuto.py)
@@ -15,3 +19,4 @@ pipeline.ngrire
 orari.json
 # Raportet ditore (raporti.py): kanë titujt e lajmeve, mbeten lokalisht
 raportet/
+eval/rezultati.json

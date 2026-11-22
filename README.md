@@ -15,7 +15,7 @@ Fokusi: **kërcënimet hibride ndaj FSK-së dhe sigurisë së Kosovës, sidomos 
 | 5 | `kontekst_*.py` | Konteksti i jashtëm: raste të ngjashme nga EUvsDisinfo dhe EuRepoC |
 | 6 | `scoring.py` | Besueshmëria: rregulla të qarta, ose modeli i kalibruar (`trajno.py`) kur ka vendime të analistit; jo nga LLM-i |
 | 7 | `rreziku.py` | Rreziku 0–100 me rregulla, prioriteti (URGJENTE/RAPORT/MONITORIM/ARKIV) dhe kodi NATO Admiralty |
-| - | `kercenimet.py` | Taksonomia: 14 kategori kërcënimesh hibride, aktorët, shenjestrat, fjalët kyçe sq/sr/en |
+| - | `kercenimet.py` | Taksonomia me 14 kategori për nxjerrjen dhe 21 kategori për vlerësimin e ndikimit, me tregues në shqip, serbisht dhe anglisht |
 | - | `raporti.py` | Raporti ditor një faqe: BLUF, Urgjente, Raporte, trendet, boshllëqet, burimet |
 | - | `dashboard.py` | Pamja e analistit: Përmbledhja (rrezik × besueshmëri, Serbia, zonat), Urgjente, Raporte, harta, kronologjia, taksonomia, burimet, vlerësimi |
 | - | `db.py` | Ruajtja në SQLite (`osint.db`) |
@@ -59,7 +59,7 @@ $env:OSINT_DB="demo.db"; python -m streamlit run dashboard.py
 ### Kontrollet në Windows
 
 ```powershell
-python kontrollo.py                   # 21 kontrolle, pa Ollama dhe pa rrjet
+python kontrollo.py                   # kontrollet, pa Ollama dhe pa rrjet
 python collector.py --kontrollo
 ```
 
@@ -71,7 +71,10 @@ Tema e errët e dashboard-it vjen nga `.streamlit/config.toml` (lexohet kur `str
 
 ### Demo në Streamlit Community Cloud
 
-Në cloud (Linux, ose lokalisht me `OSINT_CLOUD=1`) dashboard-i krijon vetë `demo.db` nga 63 artikujt **sintetikë** të `eval/gold.jsonl`, shfaq njoftimin "Demo me të dhëna sintetike" dhe çaktivizon "Ekzekuto tani" dhe orarin, sepse aty s'ka Ollama. Vendimet e analistit ruhen vetëm deri në rinisjen e aplikacionit.
+Në cloud (Linux, ose lokalisht me `OSINT_CLOUD=1`) pa `OSINT_DB`, dashboard-i krijon një bazë të përkohshme nga 63 artikujt **sintetikë** të `eval/gold.jsonl`. Demoja shfaqet vetëm për lexim dhe çaktivizon ekzekutimin e pipeline-it dhe orarin.
+Në cloud me `OSINT_DB` të caktuar, dashboard-i paraqet bazën e konfiguruar. Në Railway, pa `OSINT_DB` nis vetëm demoja. Me `OSINT_DB`, `railway-start.sh` nis edhe punëtorin mbi të njëjtën bazë; intervali është `OSINT_INTERVAL` sekonda (3600 si parazgjedhje). Me `OSINT_RUN_AI=1` kontrollo edhe disponueshmërinë e modelit Ollama. Përndryshe punëtori vetëm mbledh artikuj.
+
+Në Railway vendos **Start Command** = `sh railway-start.sh` dhe lëre **Pre-deploy Command** bosh. Skripti është proces i vazhdueshëm, ndaj si hap para nisjes bllokon publikimin. Për këtë version përdor `OSINT_CLOUD=1` dhe cakto `OSINT_DB` te baza e punës; demoja nuk shkruan mbi të. Për ruajtje ndërmjet publikimeve, baza duhet të ndodhet në një volume të qëndrueshëm. Versioni i vjetër `e7ab3eb` kërkon përkohësisht `OSINT_CLOUD=0` kur përdoret baza reale; ky përjashtim s'nevojitet pasi bashkohet korrigjimi i PR #44.
 
 1. Te share.streamlit.io: **Create app**, repo `enesmaloku-a11y/osinttttt`, dega `main`, skedari `dashboard.py`. Te **Advanced settings** zgjidh Python 3.12.
 2. Mos vendos `OSINT_DB`, `APIFY_TOKEN` apo `osint.db` në cloud: aty shkon vetëm demo-ja.
@@ -136,7 +139,7 @@ Shembujt janë te `shembuj/apify_*.json` (të shkruar nga ekipi, në shqip, serb
 - **Vendimi i analistit:** te çdo ngjarje në dashboard zgjidhet ✅ e konfirmuar, ❓ e pakonfirmuar ose ❌ e hedhur poshtë, me shënim. Vendimet ruhen në tabelën `vendimet` (çelësi = një URL e ngjarjes, gjendet me `db.url_i_vendimit`), ndaj nuk humbin kur `correlator.py` i rindërton ngjarjet. Sidebar-i filtron sipas vendimit.
 - **Zbulimi i rritjeve (`patterns.py`):** alarm kur një komunë ka ≥ 3 ngjarje në 7 ditët e fundit dhe ≥ 2 herë mesataren javore të 28 ditëve para tyre (dysheme 0.5). Shfaqet në krye të dashboard-it dhe në fund të `main.py`; `python patterns.py` e printon veçmas.
 - **Saktësia e vendit dhe datës:** modeli jep `place_precision` (fshat/komunë/rajon) dhe `date_precision` (e saktë/e përafërt), të kontrolluara me rregulla. Lajmet s'kanë GPS, prandaj harta e tregon vendin me saktësinë që dihet: rajoni ("veriu i Kosovës") si rreth ~15 km, komuna si rreth ~5 km rreth qendrës së saj, dhe vetëm fshati ose vendi i saktë si pikë. Ngjarjet e njohura vetëm në nivel rajoni marrin edhe boshllëkun "vendi vetëm në nivel rajoni". Harta hapet te Kosova, ka pamjet Rajoni, Ballkani dhe Evropa, dhe s'lëviz jashtë Evropës.
-- **Hash-i i artikujve:** `collector.py` ruan SHA-256 të tekstit bruto kur e mbledh. Te leximi i artikullit, "Verifiko tani" e rishkarkon faqen dhe tregon nëse lajmi u ndryshua, u fshi, apo ndryshoi vetëm teksti rreth tij (reklama, "më të lexuarat").
+- **Ora e publikimit dhe hash-i:** Data e ngjarjes, publikimi i deklaruar nga burimi dhe koha e mbledhjes kanë fusha të veçanta. Ora shfaqet vetëm kur burimi e jep bashkë me zonën kohore. "Verifiko tani" krahason një kopje të ruajtur të tekstit të plotë me faqen e arritshme në momentin e kontrollit.
 
 ## Vlerësimi
 
@@ -147,7 +150,7 @@ ollama serve                          # nëse s'po punon
 python eval/evaluate.py               # rreth 1–2 minuta për artikull me deepseek-r1:8b
 ```
 
-Skripti kalon të njëjtin pipeline në bazë të veçantë (`eval/eval.db`) dhe printon precision/recall (gjithsej dhe sipas gjuhës), alarmet e rreme, llojin e saktë, ngjarjet e bashkuara saktë dhe kohën. Rezultati ruhet te `eval/rezultati.json` dhe shfaqet te skeda Vlerësimi. Koha "manuale" aty është supozim (`MINUTA_MANUALE = 3` minuta për artikull), jo matje; krahasimi me analistë bëhet sipas `docs/validimi.md`. `osint.db` nuk preket.
+Skripti kalon pipeline-in në një bazë të përkohshme SQLite dhe printon precision/recall (gjithsej dhe sipas gjuhës), alarmet e rreme, llojin e saktë, ngjarjet e bashkuara saktë dhe kohën. Rezultati i një prove të plotë ruhet te `eval/rezultati.json` dhe shfaqet te skeda Vlerësimi. Tre minutat manuale për artikull janë supozimi i evaluatorit. Për matje me analistë përdoret `docs/validimi.md`.
 
 ## Të dhënat dhe privatësia
 

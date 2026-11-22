@@ -9,12 +9,12 @@
 | 0:00–0:30 | **Problemi** | Analisti i FSK-së ndjek lajme në tri gjuhë nga dhjetëra burime. Kërcënimet hibride nga Serbia (lëvizje ushtarake, dronë, sabotim, dezinformim, sulme kibernetike) humbasin në zhurmë, dhe s'dihet çfarë është e vërtetë. |
 | 0:30–2:45 | **Demo** | Shih rrjedhën më poshtë. |
 | 2:45–3:30 | **Si punon dhe pse i besohet** | Pipeline lokal me Ollama, pa cloud. (Demo-ja online mund të përdorë një model në cloud vetëm mbi lajme publike; për FSK-në mbetet lokal.) LLM-i vetëm nxjerr faktet. Rreziku vjen nga rregulla të qarta, besueshmëria nga provat (origjina të pavarura, gjuhë, kontradikta), dhe ripostimet s'numërohen si konfirmim. Admiralty sipas standardit NATO. Modeli i besueshmërisë është gati të mësojë nga vendimet e analistëve. |
-| 3:30–4:15 | **Prova** | Metrikat nga skeda Vlerësimi, me shënimin "mbi artikuj sintetikë": recall 100%, precision 92%, URGJENTE 9 nga 10, 0 bashkime të gabuara (shih "Metrikat e verifikuara"). Testi i ripostimeve (91% → 54%). Testi me mentorin (docs/validimi.md): koha para/pas, besimi 1–5. |
+| 3:30–4:15 | **Prova** | Vlerësimi historik mbi artikuj sintetikë, me 92% precision dhe 100% recall në nivel artikulli. Metrika URGJENTE kërkon rimatje me evaluatorin e përditësuar. Koha manuale matet me provën e mentorit te `docs/validimi.md`. |
 | 4:15–5:00 | **Ligji, kufizimet dhe hapi tjetër** | "E lexuam ligjin dhe kushtet e platformave." Sinqerisht: të dhënat sintetike, aktori nga modeli duhet verifikuar, lista e EUvsDisinfo kërkon eksport. Hapi tjetër: më shumë etiketa nga analistë të vërtetë, burime sociale vetëm përmes API-ve zyrtare që e lejojnë, pilot me FSK-në. |
 
-## Metrikat e verifikuara (thuaji ashtu siç janë)
+## Metrikat e provës së 21.11.2026
 
-**Lloji i provës:** vlerësim me model mbi gold set sintetik (`python eval/evaluate.py`), jo me lajme reale. Modeli `deepseek-r1:8b` lokal përmes Ollama; 63 artikuj sintetikë në shqip, serbisht dhe anglisht, 28 ngjarje të pritura; ekzekutuar më 21.11.2026. Skeda Vlerësimi tregon të njëjtat vlera nga `eval/rezultati.json`.
+Prova e dokumentuar në PR #42 përdori `deepseek-r1:8b` përmes Ollama dhe 63 artikuj sintetikë në shqip, serbisht dhe anglisht, me 28 ngjarje të pritura. Këta janë numrat e ekzekutimit të atëhershëm.
 
 | Metrika | Rezultati | Interval 95% (Wilson) |
 |---|---|---|
@@ -24,11 +24,11 @@
 | Sipas gjuhës (precision / recall) | en 0.91 / 1.00 · sq 0.91 / 1.00 · sr 0.95 / 1.00 | |
 | Kategoria e saktë | 34/49 | 0.55–0.80 |
 | Niveli i rrezikut i saktë | 18/28 | 0.46–0.79 |
-| URGJENTE | precision 13/20 (65%) · recall 9/10 (90%) | 0.43–0.82 · 0.60–0.98 |
+| URGJENTE | Kërkon rimatje me përputhjen një‑me‑një të ngjarjeve | |
 | Ngjarje të bashkuara saktë | 17/28 (shumëgjuhëshe 9/18); bashkime të gabuara: 0 | |
 | Koha e pipeline-it | 40.4 s për artikull (2 546 s për 63) | |
 
-**Fjalia për jurinë:** *"Mbi 63 artikuj sintetikë në tri gjuhë, sistemi gjeti të gjitha ngjarjet e sigurisë, me precision 92% dhe pa asnjë bashkim të gabuar. Për URGJENTE kap 9 nga 10, por rreth një e treta e alarmeve urgjente janë të tepërta: prandaj vendos analisti."*
+**Fjalia për jurinë:** *“Në provën e 21 nëntorit mbi 63 artikuj sintetikë në tri gjuhë, modeli identifikoi të 49 artikujt relevantë. Katër nga 53 artikujt e shënuar si relevantë ishin alarme të rreme.”*
 
 **Çfarë s'është matur:** krahasimi me punën manuale. Evaluator-i shfaq "~189 min manualisht", por kjo është supozim (3 minuta për artikull), jo matje. Testi me pjesëmarrës (`docs/validimi.md`) s'është bërë ende. Modeli i besueshmërisë s'është trajnuar: duhen 80 vendime të analistit (20 të konfirmuara, 20 të hedhura poshtë), dhe baza e etiketimit ka 0; besueshmëria vjen nga rregullat.
 

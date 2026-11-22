@@ -13,13 +13,17 @@ CREATE TABLE IF NOT EXISTS articles (
     url               TEXT UNIQUE NOT NULL,   -- URL e burimit (unike = pa dublikatë)
     burimi            TEXT NOT NULL,          -- p.sh. "Koha", "GDELT:balkaninsight.com"
     titulli           TEXT,
-    data              TEXT NOT NULL,          -- data e publikimit (ISO)
+    data              TEXT NOT NULL,          -- data më e mirë për renditje/përpunim (ISO)
+    published_at      TEXT,                   -- publikimi i deklaruar nga burimi, kur njihet
     gjuha             TEXT NOT NULL,          -- sq / sr / en / ...
     teksti            TEXT,
     teksti_perkthyer  TEXT,                   -- mbushet më vonë nga processor.py
     perpunuar         INTEGER NOT NULL DEFAULT 0,  -- 0 = jo, 1 = po
     rezultati_json    TEXT,                   -- cache: JSON-i i nxjerrë nga modeli
-    mbledhur_me       TEXT DEFAULT (datetime('now'))
+    mbledhur_me       TEXT DEFAULT (datetime('now')),
+    hash_sha256       TEXT,
+    raw_text          TEXT,
+    lloji_tekstit     TEXT                    -- plote / permbledhje / deshtoi, nga mbledhësi
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -56,18 +60,23 @@ def lidhu():
     """Kthen një lidhje me bazën dhe krijon tabelat nëse mungojnë."""
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
-    con.executescript(SKEMA)
-    # Migrim i butë (vetëm shtim kolonash): bazat e vjetra s'kanë hash-in dhe tekstin bruto
-    kolonat = {r["name"] for r in con.execute("PRAGMA table_info(articles)")}
-    if "hash_sha256" not in kolonat:
-        con.execute("ALTER TABLE articles ADD COLUMN hash_sha256 TEXT")
-        con.commit()
-    if "raw_text" not in kolonat:
-        # raw_text = teksti siç u mblodh; processor.py e mbishkruan vetëm 'teksti'.
-        # Artikujt e papërkthyer kanë ende tekstin bruto te 'teksti'; të përkthyerit s'e kanë më.
-        con.execute("ALTER TABLE articles ADD COLUMN raw_text TEXT")
-        con.execute("UPDATE articles SET raw_text = teksti WHERE teksti_perkthyer IS NULL")
-        con.commit()
+    try:
+        con.executescript(SKEMA)
+        shtesat = ("hash_sha256", "raw_text", "published_at", "lloji_tekstit")
+        kolonat = {r["name"] for r in con.execute("PRAGMA table_info(articles)")}
+        if not set(shtesat) <= kolonat:
+            with con:
+                # Dy procese mund të hapin të njëjtën bazë të vjetër në të njëjtën kohë.
+                con.execute("BEGIN IMMEDIATE")
+                kolonat = {r["name"] for r in con.execute("PRAGMA table_info(articles)")}
+                for kolona in shtesat:
+                    if kolona not in kolonat:
+                        con.execute(f"ALTER TABLE articles ADD COLUMN {kolona} TEXT")
+                if "raw_text" not in kolonat:
+                    con.execute("UPDATE articles SET raw_text = teksti WHERE teksti_perkthyer IS NULL")
+    except BaseException:
+        con.close()
+        raise
     return con
 
 
@@ -77,14 +86,15 @@ def ekziston_url(url):
         return con.execute("SELECT 1 FROM articles WHERE url = ?", (url,)).fetchone() is not None
 
 
-def ruaj_artikull(url, burimi, titulli, data, gjuha, teksti, hash_sha256=None):
+def ruaj_artikull(url, burimi, titulli, data, gjuha, teksti, hash_sha256=None, *,
+                  published_at=None, lloji_tekstit=None):
     """Ruan artikullin; kthen True nëse ishte i ri, False nëse ishte dublikatë.
     hash_sha256 = gjurma e tekstit bruto kur u mblodh (prova nëse faqja ndryshon më vonë)."""
     with closing(lidhu()) as con, con:
         cur = con.execute(
             "INSERT OR IGNORE INTO articles (url, burimi, titulli, data, gjuha, teksti, raw_text, "
-            "hash_sha256) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (url, burimi, titulli, data, gjuha, teksti, teksti, hash_sha256),
+            "hash_sha256, published_at, lloji_tekstit) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (url, burimi, titulli, data, gjuha, teksti, teksti, hash_sha256, published_at, lloji_tekstit),
         )
         return cur.rowcount == 1
 
@@ -151,7 +161,7 @@ def artikuj_per_nxjerrje(limit=50):
     """Artikujt që extractor.py s'i ka parë ende (më të rinjtë së pari)."""
     with closing(lidhu()) as con:
         return con.execute(
-            "SELECT id, burimi, data, gjuha, titulli, teksti, teksti_perkthyer FROM articles "
+            "SELECT id, burimi, data, published_at, gjuha, titulli, teksti, teksti_perkthyer FROM articles "
             "WHERE perpunuar = 0 ORDER BY data DESC LIMIT ?", (limit,)
         ).fetchall()
 
@@ -202,18 +212,32 @@ def sheno_perpunuar(article_id, rezultati, teksti_perkthyer=None):
 def ruaj_ngjarje(titulli, data, gjuha, burimet, boshllequet, lloji=None, vendi=None,
                  lat=None, lon=None, besueshmeria=None, detajet=None):
     """Ruan një ngjarje. 'burimet' (URL) dhe 'boshllequet' janë të detyrueshme."""
+    with closing(lidhu()) as con, con:
+        return _ruaj_ngjarje(con, titulli, data, gjuha, burimet, boshllequet, lloji, vendi,
+                             lat, lon, besueshmeria, detajet)
+
+
+def _ruaj_ngjarje(con, titulli, data, gjuha, burimet, boshllequet, lloji=None, vendi=None,
+                  lat=None, lon=None, besueshmeria=None, detajet=None):
     if not burimet:
         raise ValueError("Çdo ngjarje duhet të ketë të paktën një URL burimi")
+    cur = con.execute(
+        "INSERT INTO events (titulli, lloji, data, vendi, lat, lon, gjuha, burimet, "
+        "besueshmeria, boshllequet, detajet_json) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (titulli, lloji, data, vendi, lat, lon, gjuha,
+         json.dumps(burimet, ensure_ascii=False), besueshmeria,
+         json.dumps(boshllequet, ensure_ascii=False),
+         json.dumps(detajet or {}, ensure_ascii=False)),
+    )
+    return cur.lastrowid
+
+
+def zevendeso_ngjarjet(rreshtat):
+    """Publikon grupet e reja së bashku. Një gabim ruan grupet e mëparshme dhe vendimet."""
     with closing(lidhu()) as con, con:
-        cur = con.execute(
-            "INSERT INTO events (titulli, lloji, data, vendi, lat, lon, gjuha, burimet, "
-            "besueshmeria, boshllequet, detajet_json) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (titulli, lloji, data, vendi, lat, lon, gjuha,
-             json.dumps(burimet, ensure_ascii=False), besueshmeria,
-             json.dumps(boshllequet, ensure_ascii=False),
-             json.dumps(detajet or {}, ensure_ascii=False)),
-        )
-        return cur.lastrowid
+        con.execute("DELETE FROM events")
+        for rreshti in rreshtat:
+            _ruaj_ngjarje(con, **rreshti)
 
 
 def numero_sipas_burimit():
@@ -243,9 +267,26 @@ if __name__ == "__main__":
                           "VALUES (?, 'x', '2026-11-20', 'sq', ?, ?)",
                           [("a", "bruto", None), ("b", "e pastruar", "translated")])
             c.commit()
-        ruaj_artikull("c", "x", "t", "2026-11-21", "sq", "i ri")
+        ruaj_artikull("c", "x", "t", "2026-11-21", "sq", "i ri",
+                      published_at="2026-11-21", lloji_tekstit="plote")
         ruaj_perkthimin(3, "i ri i pastruar", "new")
         with closing(lidhu()) as c:
             raw = dict(c.execute("SELECT url, raw_text FROM articles").fetchall())
+            datat = dict(c.execute("SELECT url, published_at FROM articles").fetchall())
         assert raw == {"a": "bruto", "b": None, "c": "i ri"}, raw  # përkthimi s'e prek raw_text
+        assert datat == {"a": None, "b": None, "c": "2026-11-21"}, datat
+        vjeter = dict(titulli="Ngjarja e vjetër", data="2026-11-20", gjuha="sq", burimet=["a"], boshllequet=[])
+        e_re = dict(vjeter, titulli="Ngjarja e re", burimet=["b"])
+        zevendeso_ngjarjet([vjeter])
+        ruaj_vendimin("a", "e konfirmuar")
+        try:
+            zevendeso_ngjarjet([e_re, dict(e_re, burimet=[])])
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("Gabimi në rreshtin e dytë duhej të anashkalonte zëvendësimin")
+        assert [r["titulli"] for r in ngjarjet()] == [vjeter["titulli"]]
+        zevendeso_ngjarjet([e_re])
+        assert [r["titulli"] for r in ngjarjet()] == [e_re["titulli"]]
+        assert vendimet()["a"]["statusi"] == "e konfirmuar"
     print("Kontrollet e db.py kaluan.")

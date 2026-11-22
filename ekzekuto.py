@@ -3,11 +3,13 @@
 Përdoret nga butoni "Ekzekuto tani" në dashboard dhe nga Windows Task Scheduler.
 Nis me:  python ekzekuto.py 20      (deri në 20 artikuj për përkthim/nxjerrje)
 """
+import argparse
 import contextlib
 import json
 import os
 import subprocess
 import sys
+import time
 import traceback
 import warnings
 from datetime import datetime
@@ -53,33 +55,46 @@ def po_punon():
         return False
 
 
-def ekzekuto(n):
-    """Kalon main.py një herë dhe shkruan gjithçka te pipeline.log."""
-    os.chdir(DOSJA)  # Task Scheduler e nis nga System32; baza osint.db është këtu
-    sys.path.insert(0, DOSJA)
-    if os.path.exists(LOG) and os.path.getsize(LOG) > MAX_LOG:
-        with open(LOG, encoding="utf-8", errors="ignore") as f:
-            fundi = f.read()[-MAX_LOG // 2:]
-        with open(LOG, "w", encoding="utf-8") as f:
-            f.write(fundi)
-
-    with open(LOCK, "a+") as bllok, open(LOG, "a", encoding="utf-8", buffering=1) as log:
+def ekzekuto(n, *, vetem_mbledhje=False):
+    """Kalon një herë me bllokim të përbashkët dhe kthen kodin e daljes."""
+    with contextlib.chdir(DOSJA), open(LOCK, "a+") as bllok:
         try:
             _blloko(bllok)
         except OSError:
-            log.write(f"{datetime.now():%Y-%m-%d %H:%M} një ekzekutim tjetër po punon; u anashkalua.\n")
-            return
-        with contextlib.redirect_stdout(log), contextlib.redirect_stderr(log):
-            warnings.simplefilter("ignore")  # paralajmërimet e librarive s'i duhen analistit
-            print(f"\n===== {datetime.now():%Y-%m-%d %H:%M} FILLIMI (deri në {n} artikuj) =====")
+            return 0  # procesi aktiv është pronari i logut
+        if os.path.exists(LOG) and (madhesia := os.path.getsize(LOG)) > MAX_LOG:
+            with open(LOG, "rb") as f:
+                f.seek(madhesia - MAX_LOG // 2)
+                fundi = f.read().decode("utf-8", errors="ignore")
+            with open(LOG, "w", encoding="utf-8") as f:
+                f.write(fundi)
+        with (open(LOG, "a", encoding="utf-8", buffering=1) as log,
+              contextlib.redirect_stdout(log), contextlib.redirect_stderr(log), warnings.catch_warnings()):
+            warnings.simplefilter("ignore")
+            veprimi = "vetëm mbledhje" if vetem_mbledhje else f"deri në {n} artikuj"
+            print(f"\n===== {datetime.now():%Y-%m-%d %H:%M} FILLIMI ({veprimi}) =====")
+            kodi = 0
             try:
-                import main
-                main.main(n)
+                if vetem_mbledhje:
+                    import collector
+                    from raporti import ngrire
+                    if ngrire():
+                        print("Pipeline-i është i ngrirë (etiketim): s'u bë asgjë.")
+                    else:
+                        print(collector.mblidh_te_gjitha())
+                else:
+                    import main
+                    main.main(n)
             except SystemExit as e:  # p.sh. "Ollama nuk po punon"
-                print(e)
+                kodi = e.code if isinstance(e.code, int) else int(e.code is not None)
+                if e.code is not None:
+                    print(e)
             except Exception:
+                kodi = 1
                 traceback.print_exc()
-            print(f"===== {datetime.now():%Y-%m-%d %H:%M} FUNDI =====")
+            gjendja = "DËSHTOI" if kodi else "FUNDI"
+            print(f"===== {datetime.now():%Y-%m-%d %H:%M} {gjendja} =====")
+            return kodi
 
 
 def nis_ne_sfond(n):
@@ -120,20 +135,68 @@ def vendos_orarin(ore, n=20):
 
 def hiq_orarin():
     """Fshin detyrën automatike (nëse ekziston)."""
-    if os.path.exists(ORARI):
-        os.remove(ORARI)
     if not _schtasks("/Query", "/TN", DETYRA)[0]:
         return True, "S'kishte orar automatik."
-    return _schtasks("/Delete", "/TN", DETYRA, "/F")
+    ok, mesazhi = _schtasks("/Delete", "/TN", DETYRA, "/F")
+    if ok:
+        with contextlib.suppress(FileNotFoundError):
+            os.remove(ORARI)
+    return ok, mesazhi
 
 
 def orari_aktual():
     """Kthen {"ore", "n"} nëse detyra ekziston në Task Scheduler, përndryshe None."""
     if not (os.path.exists(ORARI) and _schtasks("/Query", "/TN", DETYRA)[0]):
         return None
-    with open(ORARI, encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(ORARI, encoding="utf-8") as f:
+            orari = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(orari, dict) or any(type(orari.get(k)) is not int or orari[k] < 1 for k in ("ore", "n")):
+        return None
+    return orari
+
+
+def kontrollo():
+    """Prova offline për ngrirjen, kodin e gabimit dhe konfigurimin e orarit."""
+    import tempfile
+    from pathlib import Path
+    from unittest.mock import patch
+
+    import collector
+    import main
+    with tempfile.TemporaryDirectory() as dosja:
+        skedari = Path(dosja) / "pipeline.log"
+        orari = Path(dosja) / "orari.json"
+        with (patch.multiple(__name__, DOSJA=dosja, LOG=skedari, LOCK=Path(dosja) / "pipeline.lock", ORARI=orari),
+              patch.dict(os.environ, {"OSINT_NGRIRE": "1"}), patch.object(collector, "mblidh_te_gjitha") as mblidh):
+            assert ekzekuto(1, vetem_mbledhje=True) == 0
+            mblidh.assert_not_called()
+            with patch.object(main, "main", side_effect=SystemExit("gabim i provës")):
+                assert ekzekuto(1) == 1
+            assert "DËSHTOI" in skedari.read_text(encoding="utf-8")
+            orari.write_text("[", encoding="utf-8")
+            with patch(__name__ + "._schtasks", side_effect=[(True, ""), (True, ""), (False, "gabim")]):
+                assert orari_aktual() is None
+                assert not hiq_orarin()[0] and orari.exists()
+    print("Kontrollet e ekzekutimit kaluan.")
 
 
 if __name__ == "__main__":
-    ekzekuto(int(sys.argv[1]) if len(sys.argv) > 1 else 20)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("n", type=int, nargs="?", default=20)
+    parser.add_argument("--mbledhje", action="store_true", help="vetëm RSS/GDELT, pa model")
+    parser.add_argument("--interval", type=int, help="përsërit çdo N sekonda")
+    parser.add_argument("--kontrollo", action="store_true", help="provat offline")
+    args = parser.parse_args()
+    if args.kontrollo:
+        kontrollo()
+        sys.exit(0)
+    if args.n < 1 or (args.interval is not None and args.interval < 1):
+        parser.error("Numri i artikujve dhe intervali duhet të jenë pozitivë")
+    while True:
+        kodi = ekzekuto(args.n, vetem_mbledhje=args.mbledhje)
+        if args.interval is None:
+            sys.exit(kodi)
+        time.sleep(args.interval)

@@ -106,8 +106,10 @@ def _artikull(platforma, url, burimi, titulli, teksti, data):
         return None, "pa datë publikimi të vlefshme"
     if not collector.KOSOVA.search(teksti):
         return None, "pa lidhje me Kosovën"
+    # createdAt i postimit është publikimi i deklaruar nga platforma (si published_at i RSS-së)
     return dict(url=collector.url_normalizuar(url), burimi=burimi, titulli=titulli.strip()[:300], data=data,
-                gjuha=collector.zbulo_gjuhen(teksti), teksti=teksti, hash_sha256=collector.gjurma(teksti)), None
+                gjuha=collector.zbulo_gjuhen(teksti), teksti=teksti, hash_sha256=collector.gjurma(teksti),
+                published_at=data), None
 
 
 def artikull_reddit(p):
