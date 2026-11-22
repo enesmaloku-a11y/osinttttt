@@ -44,8 +44,9 @@ def main(n):
         print("Pipeline-i është i ngrirë (etiketim): s'u bë asgjë.")
         return
     # Kontrollo para mbledhjes, që të mos presim për asgjë nëse modeli s'punon
-    if not processor.ollama_gati():
-        sys.exit("Ollama nuk po punon. Nise me 'ollama serve' dhe provo përsëri.")
+    if not processor.model_gati():
+        sys.exit("Modeli s'është gati: nis Ollama ('ollama serve'), ose me LLM_PROVIDER=featherless "
+                 "vendos FEATHERLESS_API_KEY dhe FEATHERLESS_MODEL.")
     t0 = time.time()
 
     print("1/7 Mbledhja e artikujve...")
