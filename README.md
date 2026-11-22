@@ -46,7 +46,7 @@ pip install -r requirements.txt
 ollama pull deepseek-r1:8b
 ```
 
-Modeli ndryshohet te `MODELI` në `processor.py`.
+Variablat e mjedisit (baza, modeli, Featherless, Apify, fjalëkalimi) janë te `.env.example`, pa vlera reale. Modeli ndryshohet me `OLLAMA_MODEL`.
 
 ## Përdorimi
 
