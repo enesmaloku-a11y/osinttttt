@@ -14,6 +14,9 @@ import db
 
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/generate")
 MODELI = os.environ.get("OLLAMA_MODEL", "deepseek-r1:8b")  # ose ndryshoje këtu
+# Vetëm me LLM_PROVIDER=featherless teksti dërgohet te një API në cloud (p.sh. demo në Railway);
+# parazgjedhja mbetet Ollama lokal, që laptopi i analistit të mos dërgojë asgjë jashtë pa e ditur.
+FEATHERLESS_URL = os.environ.get("FEATHERLESS_BASE_URL", "https://api.featherless.ai/v1").rstrip("/") + "/chat/completions"
 MAX_KARAKTERE = 4000        # artikujt e gjatë priten; ngjarja zakonisht është në fillim
 COPA = 1500                 # sa karaktere përkthehen në një thirrje
 
@@ -74,27 +77,57 @@ def ollama_gati():
     return gabimi_ollama() is None
 
 
+def featherless():
+    return os.environ.get("LLM_PROVIDER", "ollama").strip().lower() == "featherless"
+
+
+def gabimi_modelit():
+    """Arsyeja pse modeli s'është gati, ose None: Ollama lokal, ose Featherless me çelës dhe model."""
+    if featherless():
+        if os.environ.get("FEATHERLESS_API_KEY") and os.environ.get("FEATHERLESS_MODEL"):
+            return None
+        return "Me LLM_PROVIDER=featherless vendos FEATHERLESS_API_KEY dhe FEATHERLESS_MODEL."
+    return gabimi_ollama()
+
+
+def model_gati():
+    return gabimi_modelit() is None
+
+
 def pyet_ollama(prompt, si_json=False):
-    """Thirrje e thjeshtë te Ollama lokal; kthen vetëm përgjigjen (pa <think>).
-    si_json=True e detyron modelin të kthejë JSON të vlefshëm."""
-    kerkesa = {"model": MODELI, "prompt": prompt, "stream": False,
-               "think": False, "options": {"temperature": 0}}
-    if si_json:
-        kerkesa["format"] = "json"
-    trupi = json.dumps(kerkesa).encode()
-    req = urllib.request.Request(OLLAMA_URL, data=trupi,
-                                 headers={"Content-Type": "application/json"})
-    # Ollama ndonjëherë kthen 500 (p.sh. kur modeli ringarkohet); riprovo 2 herë
+    """Thirrje te modeli (Ollama lokal ose, me LLM_PROVIDER=featherless, Featherless); kthen vetëm
+    përgjigjen (pa <think>). si_json=True e detyron modelin të kthejë JSON të vlefshëm.
+    Emri mbetet pyet_ollama, sepse extractor.py dhe perkthe() e thërrasin kështu."""
+    if featherless():
+        kerkesa = {"model": os.environ["FEATHERLESS_MODEL"], "temperature": 0, "max_tokens": 4096,
+                   "messages": [{"role": "user", "content": prompt}]}
+        if si_json:
+            kerkesa["response_format"] = {"type": "json_object"}
+        # Çelësi vetëm në header, kurrë në URL ose në log
+        req = urllib.request.Request(FEATHERLESS_URL, data=json.dumps(kerkesa).encode(), headers={
+            "Content-Type": "application/json", "Authorization": f"Bearer {os.environ['FEATHERLESS_API_KEY']}"})
+        lexo = lambda d: d["choices"][0]["message"]["content"]
+    else:
+        kerkesa = {"model": MODELI, "prompt": prompt, "stream": False,
+                   "think": False, "options": {"temperature": 0}}
+        if si_json:
+            kerkesa["format"] = "json"
+        req = urllib.request.Request(OLLAMA_URL, data=json.dumps(kerkesa).encode(),
+                                     headers={"Content-Type": "application/json"})
+        lexo = lambda d: d["response"]
+    # Ollama ndonjëherë kthen 500 (p.sh. kur modeli ringarkohet), API-ja 429 (kufi ritmi); riprovo 2 herë
     for prova in range(3):
         try:
             with urllib.request.urlopen(req, timeout=300) as r:
-                rezultati = json.load(r)
-            pergjigja = rezultati.get("response") if isinstance(rezultati, dict) else None
+                try:
+                    pergjigja = lexo(json.load(r))
+                except (KeyError, IndexError, TypeError):
+                    pergjigja = None
             if not isinstance(pergjigja, str) or not pergjigja.strip():
-                raise ValueError("Ollama ktheu përgjigje bosh ose të pavlefshme.")
+                raise ValueError("Modeli ktheu përgjigje bosh ose të pavlefshme.")
             break
         except urllib.error.HTTPError as e:
-            if e.code < 500 or prova == 2:
+            if (e.code < 500 and e.code != 429) or prova == 2:
                 raise
         except urllib.error.URLError:
             if prova == 2:
@@ -137,7 +170,37 @@ def perpuno(limit=20):
     return ok, gabime
 
 
-if __name__ == "__main__":
+def kontrollo_llm():
+    """Pa rrjet: zgjedhja e provider-it, kërkesa që dërgohet dhe leximi i përgjigjes, me API të simuluar."""
+    import io
+    from unittest.mock import patch
+    derguar = []
+
+    def pergjigje(req, timeout):
+        derguar.append(req)
+        d = ({"choices": [{"message": {"content": "<think>x</think> OK"}}]} if "chat/completions" in req.full_url
+             else {"response": "OK"})
+        return io.BytesIO(json.dumps(d).encode())
+
+    with patch.dict(os.environ, {"LLM_PROVIDER": "", "FEATHERLESS_API_KEY": "sekret-prove"}), \
+            patch("urllib.request.urlopen", pergjigje):
+        assert pyet_ollama("p") == "OK" and derguar[-1].full_url == OLLAMA_URL  # parazgjedhja: lokal
+    with patch.dict(os.environ, {"LLM_PROVIDER": "featherless", "FEATHERLESS_API_KEY": "sekret-prove",
+                                 "FEATHERLESS_MODEL": "model-prove"}), patch("urllib.request.urlopen", pergjigje):
+        assert model_gati() and pyet_ollama("p", si_json=True) == "OK"
+        req = derguar[-1]
+        trupi = json.loads(req.data)
+        assert req.full_url == FEATHERLESS_URL and req.get_header("Authorization") == "Bearer sekret-prove"
+        assert "sekret" not in req.full_url and trupi["model"] == "model-prove"
+        assert trupi["response_format"] == {"type": "json_object"} and trupi["messages"][0]["content"] == "p"
+    with patch.dict(os.environ, {"LLM_PROVIDER": "featherless", "FEATHERLESS_API_KEY": "", "FEATHERLESS_MODEL": "m"}):
+        assert not model_gati()  # pa çelës s'niset
+    print("Kontrollet e provider-it të modelit kaluan (pa rrjet).")
+
+
+if __name__ == "__main__" and "--kontrollo" in sys.argv:
+    kontrollo_llm()
+elif __name__ == "__main__":
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 20
     ok, gabime = perpuno(n)
     print(f"\nU përpunuan {ok}, gabime {gabime}.")

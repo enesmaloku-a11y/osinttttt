@@ -460,7 +460,7 @@ def kontrollo():
 if __name__ == "__main__":
     kontrollo()
     gold = lexo_gold()
-    gabimi = processor.gabimi_ollama()
+    gabimi = processor.gabimi_modelit()
     if gabimi:
         sys.exit(gabimi)
     print(f"Gold set: {len(gold)} artikuj. Pipeline-i po kalon (mund të zgjasë disa minuta)...")

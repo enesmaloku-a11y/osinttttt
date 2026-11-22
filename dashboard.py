@@ -6,6 +6,7 @@ të rreziku.py), Ngjarjet (harta, kronologjia), Kërcënimet (taksonomia), Burim
 Artikujt, Ekzekutimi.
 """
 import hashlib
+import hmac
 import html
 import json
 import os
@@ -76,10 +77,21 @@ h3 { font-size: .8rem !important; letter-spacing: .14em; text-transform: upperca
 [data-testid="stExpander"] details { background: var(--bg2); border: 1px solid var(--vija); border-radius: 6px; }
 [data-testid="stMetricValue"] { color: var(--theks); }
 </style>""", unsafe_allow_html=True)
+FJALEKALIMI = os.environ.get("OSINT_FJALEKALIMI")
+if FJALEKALIMI and not st.session_state.get("hyri"):
+    dhene = st.text_input("Fjalëkalimi", type="password")
+    if not hmac.compare_digest(dhene.encode(), FJALEKALIMI.encode()):
+        if dhene:
+            st.error("Fjalëkalim i gabuar.")
+        st.stop()
+    st.session_state["hyri"] = True
+    st.rerun()
+
 # Koka dhe paneli i komandës zënë vendin lart; mbushen më poshtë, pasi të llogariten numrat
 VENDI_KOKES = st.container()
 KOMANDA = st.expander("Komanda: mbledhja dhe filtrat", expanded=False)
 
+# OSINT_CLOUD=0 lejon pipeline-in në Linux kur ka Ollama (p.sh. Railway).
 # Në cloud pipeline-i nuk niset nga ndërfaqja. Një OSINT_DB i konfiguruar lexohet siç
 # është; pa të, cloud-i përgatit një demo të izoluar për procesin.
 CLOUD = os.environ.get("OSINT_CLOUD", "1" if os.name != "nt" else "0") == "1"
@@ -915,6 +927,29 @@ with tab_ekz:
                                          if ok else f"Gabim nga Task Scheduler: {mesazhi}")
         if ok:
             st.rerun()
+
+    # Rrjetet sociale: postimet hyjnë si artikuj; "Ekzekuto tani" pastaj i analizon si lajmet
+    st.subheader("Rrjetet sociale (Apify)")
+    import apify_burimi
+    st.caption("Statusi i lejes: " + " · ".join(f"{p}: {s}" for p, s in apify_burimi.STATUSI.items())
+               + ". Aktivizohet me APIFY_LEJET te variablat e serverit.")
+    s1, s2, s3 = st.columns([1, 1, 2])
+    platforma = s1.selectbox("Platforma", list(apify_burimi.PLATFORMAT), key="apify_platforma")
+    menyra = s2.radio("Nga", ["Dataset", "Run", "Nisje e re (me pagesë)"], key="apify_menyra")
+    id_apify = s3.text_input("Dataset ID ose Run ID", key="apify_id", disabled=menyra.startswith("Nisje"))
+    if st.button("Merr postimet", disabled=ngrire, key="apify_merr"):
+        try:
+            with st.spinner("Po merren postimet nga Apify..."):
+                if menyra == "Dataset":
+                    rez = apify_burimi.importo(platforma, dataset=id_apify.strip())
+                elif menyra == "Run":
+                    rez = apify_burimi.importo(platforma, run=id_apify.strip())
+                else:
+                    rez = apify_burimi.nis(platforma, 20)
+            st.success(f"{platforma}: {rez}. Tani shtyp 'Ekzekuto tani' që modeli t'i analizojë.")
+            st.cache_data.clear()
+        except apify_burimi.GabimApify as e:
+            st.error(f"{platforma}: {e}")
 
     st.subheader("Log-u i fundit")
     st.code(ekzekuto.log_fundit(25), language=None)

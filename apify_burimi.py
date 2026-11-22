@@ -40,6 +40,13 @@ PRITJE = "në pritje të lejes"
 # Ndryshohet vetëm kur marrëveshja e platformës mbulon mbledhjen, ruajtjen, analizën me model
 # dhe shfaqjen te FSK-ja (shih README, "Rrjetet sociale").
 STATUSI = {"reddit": PRITJE, "x": SINTETIKE, "telegram": SINTETIKE}
+# Operatori i aktivizon pasi leja të verifikohet, p.sh. APIFY_LEJET="reddit,x" te variablat e serverit
+for _p in os.environ.get("APIFY_LEJET", "").replace(" ", "").lower().split(","):
+    if _p in STATUSI:
+        STATUSI[_p] = AKTIVE
+# Subreddit-et që skanohen drejtpërdrejt (p.sh. r/osint_demo_test); bosh = kërkim me fjalë kyçe
+REDDIT_URLS = [u.strip() for u in os.environ.get("APIFY_REDDIT_URLS", "").split(",")
+               if u.strip().startswith("https://www.reddit.com/r/")]
 
 API = "https://api.apify.com"
 FAQJA = 100            # rreshta për kërkesë te dataset-i
@@ -99,8 +106,10 @@ def _artikull(platforma, url, burimi, titulli, teksti, data):
         return None, "pa datë publikimi të vlefshme"
     if not collector.KOSOVA.search(teksti):
         return None, "pa lidhje me Kosovën"
+    # createdAt i postimit është publikimi i deklaruar nga platforma (si published_at i RSS-së)
     return dict(url=collector.url_normalizuar(url), burimi=burimi, titulli=titulli.strip()[:300], data=data,
-                gjuha=collector.zbulo_gjuhen(teksti), teksti=teksti, hash_sha256=collector.gjurma(teksti)), None
+                gjuha=collector.zbulo_gjuhen(teksti), teksti=teksti, hash_sha256=collector.gjurma(teksti),
+                published_at=data), None
 
 
 def artikull_reddit(p):
@@ -141,9 +150,12 @@ def artikull_x(t):
 PLATFORMAT = {
     "reddit": {"actor": "automation-lab~reddit-scraper", "maks": 1000, "artikulli": artikull_reddit,
                "hostet": {"www.reddit.com", "reddit.com", "old.reddit.com"},
-               "hyrja": lambda n: {"searchQueries": KERKIMET_REDDIT, "sort": "relevance", "timeFilter": "week",
-                                   "maxPostsPerSource": max(1, n // len(KERKIMET_REDDIT)),
-                                   "includeComments": False, "includeNsfw": False,
+               # Subreddit-i i ekipit (REDDIT_URLS) merret i plotë edhe kur Reddit e shënon NSFW;
+               # te kërkimi i përgjithshëm NSFW-ja mbetet jashtë
+               "hyrja": lambda n: {**({"urls": REDDIT_URLS, "sort": "new"} if REDDIT_URLS else
+                                      {"searchQueries": KERKIMET_REDDIT, "sort": "relevance", "timeFilter": "week"}),
+                                   "maxPostsPerSource": max(1, n // len(REDDIT_URLS or KERKIMET_REDDIT)),
+                                   "includeComments": False, "includeNsfw": bool(REDDIT_URLS),
                                    "filterKeywords": FILTRI, "deduplicatePosts": True}},
     "x": {"actor": "xquik~x-tweet-scraper", "maks": 1000, "artikulli": artikull_x,
           "hostet": {"x.com"},
@@ -434,6 +446,15 @@ def kontrollet():
             kerko, db.DB_PATH, NUMRI, FAQJA = kerko_vjeter, vjeter, numri, faqja
             STATUSI["reddit"] = PRITJE
             os.environ.pop("APIFY_TOKEN", None)
+    # Subreddit i caktuar: skanohet ai, jo kërkimi
+    REDDIT_URLS.append("https://www.reddit.com/r/osint_demo_test/")
+    try:
+        h = PLATFORMAT["reddit"]["hyrja"](20)
+        assert h["urls"] == ["https://www.reddit.com/r/osint_demo_test/"] and "searchQueries" not in h
+        assert h["includeNsfw"] is True
+    finally:
+        REDDIT_URLS.clear()
+    assert "searchQueries" in PLATFORMAT["reddit"]["hyrja"](20) and PLATFORMAT["reddit"]["hyrja"](20)["includeNsfw"] is False
     print("Kontrollet kaluan: apify_burimi (normalizimi, dublikatat, ripostimet, faqet, lejet, timeout).")
 
 

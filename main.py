@@ -45,7 +45,7 @@ def main(n):
         print("Pipeline-i është i ngrirë (etiketim): s'u bë asgjë.")
         return
     # Kontrollo para mbledhjes, që të mos presim për asgjë nëse modeli s'punon
-    gabimi = processor.gabimi_ollama()
+    gabimi = processor.gabimi_modelit()
     if gabimi:
         sys.exit(gabimi)
     t0 = time.time()
