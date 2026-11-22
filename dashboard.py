@@ -30,6 +30,7 @@ import db
 import ekzekuto
 import extractor
 import kercenimet
+import kontrolli_dyte
 import patterns
 import raporti
 import rreziku
@@ -351,6 +352,19 @@ def kartela(e, skeda):
         r2.caption(f"Admiralty: {kodi or '–'} · Sources: {len(e['burimet_l'])}, independent: {n_pav}")
         r3.metric("Decision", STATUS_EN.get(e["statusi"], e["statusi"]).capitalize())
         r3.caption("The system suggests, the analyst decides.")
+        kontroll = kontrolli_dyte.lexo(e["burimet_l"])
+        seksion("Initial assessment")
+        st.write(f"{PRIO_EN.get(p, p or 'Pending')} · risk {pike if pike is not None else '–'}/100 · credibility {perqind(b)}")
+        seksion("Second AI check")
+        if kontroll:
+            status = kontroll["status"]
+            st.write("Needs verification" if status == "nuk_pajtohet" else
+                     "Agrees" if status == "pajtohet" else "Insufficient evidence")
+            st.write(raporti.pastro(kontroll["reason"], 300))
+            if kontroll["gaps"]:
+                st.caption("Missing evidence: " + "; ".join(raporti.pastro(x, 120) for x in kontroll["gaps"]))
+        else:
+            st.caption("No second check yet. The analyst's decision remains independent.")
         if p == "URGJENTE" and raporti.per_verifikim(e):
             st.warning("For verification, not for action: credibility is below 80% and not confirmed.")
         sociale = sorted({m.split(":")[0] for m in det.get("mediat") or []

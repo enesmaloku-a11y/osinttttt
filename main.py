@@ -14,6 +14,7 @@ import sys
 import time
 
 import collector
+import kontrolli_dyte
 import correlator
 import db
 import extractor
@@ -74,6 +75,8 @@ def main(n):
     print("7/7 Rreziku dhe prioriteti...")
     r = rreziku.vlereso_te_gjitha()
     print(f"  {r} ngjarje të vlerësuara")
+    if kontrolli_dyte.konfiguruar():
+        print("Second AI check:", kontrolli_dyte.kontrollo())
 
     # Alarmet për rritje të pazakonta (vetëm informim; analisti vendos)
     alarmet = patterns.rritjet(raporti.ngjarjet(), fillimi_mbledhjes=db.fillimi_i_mbledhjes())
