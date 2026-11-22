@@ -6,6 +6,17 @@ Fokusi: **kërcënimet hibride ndaj FSK-së dhe sigurisë së Kosovës, sidomos 
 
 ## Si punon
 
+### Kontrolli i dytë AI (opsional)
+
+Vendos `SECOND_LLM_PROVIDER=ollama` me `SECOND_OLLAMA_MODEL`, ose
+`SECOND_LLM_PROVIDER=featherless` me `SECOND_FEATHERLESS_MODEL` dhe
+`SECOND_FEATHERLESS_API_KEY`. Pa këto variabla kontrolli i dytë është i fikur.
+Thirret vetëm për ngjarje urgjente, me besueshmëri nën 55%, me boshllëqe ose
+kundërshtime. `SECOND_LLM_MAX_PER_RUN` ka parazgjedhje 3 dhe kufi 5.
+Rezultati ruhet veçmas nga vendimi i analistit; gabimi i shërbimit nuk ndal pipeline-in.
+Për përmbajtje reale, përdorimi i Featherless dërgon përmbledhjen dhe URL-të te
+shërbimi i jashtëm. Prova e plotë e cilësisë dhe kostos kërkon model real.
+
 | Hapi | Skedari | Çfarë bën |
 |---|---|---|
 | 1 | `collector.py` | Mbledh artikuj nga RSS dhe GDELT, pa dublikatë, dhe filtron ata pa lidhje me Kosovën ose sigurinë (burimet më poshtë) |
