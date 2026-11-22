@@ -37,6 +37,14 @@ OBJEKTE = re.compile(r"\b(dam|reservoir|substation|power plant|power line|pipeli
                      r"canal|barracks|military base|airport|border crossing)\b|gazivod|ujman|"
                      r"bondsteel|trepca|trepç|ibar-lepenac|iber-lepenac|ibër-lepenc", re.I)
 PRAGU_LARTE, PRAGU_MESEM = 55, 35
+# Kërcënim i drejtpërdrejtë për sulm (p.sh. postimi "we will attack today in kosova"): modeli e përmbledh
+# si "threatened to carry out an attack", por shpesh pa kategori. Përmbledhja (titulli) është në anglisht.
+KERCENIM = re.compile(r"\b(?:threat\w*\s+(?:to\s+)?(?:carry\s+out\s+)?(?:an?\s+)?(?:\w+\s+)?attacks?\b"
+                      r"|(?:plan\w*|vow\w*|announc\w*|call\w*\s+for)\s+(?:an?\s+)?(?:\w+\s+)?attacks?\b"
+                      r"|(?:will|going\s+to)\s+attack\b)", re.I)
+# Demantimet dhe lajmet e rreme për kërcënime s'janë vetë kërcënime
+JO_KERCENIM = re.compile(r"\b(?:no|false\w*|fake|den(?:y|ies|ied)|hoax|rumou?r\w*)\b", re.I)
+KERCENIM_PIKE = 10
 # Shenjestrat që e lidhin një ngjarje rajonale drejtpërdrejt me Kosovën
 RAJONALE_ME_LIDHJE = {"fsk", "kfor_nato", "institucione", "infrastrukture_kritike"}
 B_LARTE, B_ULET = 0.80, 0.50  # 80% = "highly likely" (PHIA); nën 50% = më pak se gjasa të barabarta
@@ -180,15 +188,23 @@ def vlereso(e, det, *, sot=None, te_tjerat=(), vendimet=None, dez=None):
         return p
 
     kat = kategoria(det)
+    titulli = e.get("titulli") if isinstance(e.get("titulli"), str) else ""
+    kercenim = bool(KERCENIM.search(titulli)) and not JO_KERCENIM.search(titulli)
+    if kercenim and kat == "tjeter":
+        kat = "ekstremizem_terrorizem"  # kërcënimi për sulm s'mbetet "tjetër" kur modeli s'i jep kategori
     rb = baza(kat) if kat != "tjeter" else LLOJI_RB.get(e.get("lloji"), baza("tjeter"))
     burim_baze = kat if kat != "tjeter" or e.get("lloji") not in LLOJI_RB else f"lloji i vjetër {e['lloji']}"
     pike = shto(PIKE_PER_BAZE * rb, f"kategoria: {burim_baze} (rrezikshmëri bazë {rb}/5)")
-    p, s = max(((SHENJESTRA[x], x) for x in det.get("shenjestrat") or [] if x in SHENJESTRA), default=(0, None))
+    shenjestrat = list(det.get("shenjestrat") or [])
+    if kercenim and re.search(r"kosov", titulli, re.I) and not shenjestrat:
+        shenjestrat = ["institucione"]  # sulm i paralajmëruar "në Kosovë" pa shenjestër më të saktë
+    p, s = max(((SHENJESTRA[x], x) for x in shenjestrat if x in SHENJESTRA), default=(0, None))
     if det.get("lidhje_me_fsk") is True and p < LIDHJE_FSK:
         p, s = LIDHJE_FSK, "lidhje me FSK-në"
     pike += shto(p, f"shenjestra: {s}")
     a = det.get("aktori")
     pike += shto(AKTORI.get(a, 0) if isinstance(a, str) else 0, f"aktori: {a}")
+    pike += shto(KERCENIM_PIKE if kercenim else 0, "kërcënim i drejtpërdrejtë për sulm")
     k, i, ar = (maks(det.get(x)) for x in ("killed", "injured", "arrested"))
     pike += shto(min(15, 10 * (k >= 1) + 3 * (k >= 3) + 4 * (i >= 1) + 2 * (i >= 5) + 2 * (ar >= 1)),
                  f"shkalla: {k} të vdekur, {i} të plagosur, {ar} të arrestuar")
@@ -406,4 +422,14 @@ if __name__ == "__main__":
             assert not any("3 zona" in a for a in dets["Zubin Potok"]["rreziku"]["arsyet"])
         finally:
             db.DB_PATH = vjeter
+    # Kërcënim i drejtpërdrejtë: "we will attack today in kosova" -> URGJENTE për verifikim (burim social F)
+    kerc = {"id": 99, "titulli": "An unidentified party threatened to carry out an attack in Kosovo.",
+            "data": "2026-11-22", "besueshmeria": 0.36, "burimet": json.dumps(["https://www.reddit.com/r/x/1"])}
+    r = vlereso(kerc, {"mediat": ["Reddit:r/x"], "aktori": "i_panjohur"}, sot="2026-11-22")
+    assert (r["rreziku"]["niveli"], r["prioriteti"]) == ("i lartë", "URGJENTE"), r["rreziku"]
+    assert any("kërcënim i drejtpërdrejtë" in a for a in r["rreziku"]["arsyet"])
+    for t in ("Police deny claims of a threat to attack a school in Kosovo.",
+              "Kosovo football club plans attacking style for the new season.",
+              "The Serbian army is scheduled to hold a training exercise near Kosovo."):
+        assert vlereso({**kerc, "titulli": t}, {"mediat": ["Reddit:r/x"]}, sot="2026-11-22")["rreziku"]["niveli"] != "i lartë", t
     print(f"Kontrollet kaluan: {len(RASTET)} raste, vetitë dhe kontrolli me DB të përkohshme.")
